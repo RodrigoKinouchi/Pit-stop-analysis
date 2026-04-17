@@ -15,7 +15,6 @@ import pandas as pd
 import streamlit as st
 
 from utils.db_2026 import (
-    count_pit_events_2026,
     default_db_path,
     delete_pit_event,
     ensure_db_ready,
@@ -65,38 +64,15 @@ st.caption(
     f"Banco SQLite: `{default_db_path()}` (env `PITSTOP_2026_DB` ou secret homónimo)."
 )
 
-with st.expander("Por que os pits sumiram após redeploy na Cloud? (persistência)", expanded=False):
-    st.markdown(
-        """
-No **Streamlit Community Cloud**, cada redeploy recria o servidor a partir do **Git**.
-O ficheiro `data/pitstop_2026.db` gravado só em runtime **não faz parte** do repositório
-por omissão; por isso **desaparece** ao novo deploy.
-
-**Formas de não perder dados ao longo do ano:**
-
-1. **Incluir o `.db` no Git** — após gravar pits: `git add data/pitstop_2026.db`, commit, push.
-   O próximo deploy traz o banco com os dados (até ao último commit).
-2. **Backup manual** — use o botão abaixo para descarregar o `.db` e guarde-o num sítio seguro
-   (repositório, Drive, etc.).
-3. **Servidor com disco persistente** — alojar o app noutro sítio onde o `data/` não seja apagado.
-4. **Base de dados na nuvem** (PostgreSQL Supabase, Neon, etc.) — exige migrar o código
-   para ligar por URL; é o caminho certo para produção sem depender de commits no Git.
-
-**Secrets:** pode definir `PITSTOP_2026_DB` nas secrets do Streamlit com o caminho absoluto
-para um volume persistente **se** o plano o suportar (raro no plano gratuito).
-        """
+_db_path = default_db_path()
+if _db_path.exists():
+    st.download_button(
+        label="Descarregar backup",
+        data=_db_path.read_bytes(),
+        file_name="pitstop_2026_backup.db",
+        mime="application/x-sqlite3",
+        key="download_sqlite_backup",
     )
-    dbp = default_db_path()
-    n_pits = count_pit_events_2026()
-    st.caption(f"Pits gravados neste ficheiro: **{n_pits}**.")
-    if dbp.exists():
-        st.download_button(
-            label="Descarregar backup do banco (pitstop_2026.db)",
-            data=dbp.read_bytes(),
-            file_name="pitstop_2026_backup.db",
-            mime="application/x-sqlite3",
-            key="download_sqlite_backup",
-        )
 
 cal_rows = fetch_calendar()
 if not cal_rows:
