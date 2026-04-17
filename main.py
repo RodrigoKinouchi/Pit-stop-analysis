@@ -100,6 +100,7 @@ Use os links abaixo para acessar as páginas das temporadas:
 - [🏁 Temporada 2024](temporada_2024)
 - [🏁 Temporada 2025](temporada_2025)
 - [📝 Entrada de dados 2026 (SQLite)](entrada_2026)
+- [🏁 Temporada 2026 — gráficos (SQLite)](temporada_2026)
 """)
 st.sidebar.markdown("""
 **Ou use o menu lateral** para navegar diretamente entre as páginas.

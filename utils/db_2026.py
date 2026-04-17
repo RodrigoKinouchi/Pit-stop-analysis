@@ -303,6 +303,8 @@ def load_season_dataframe_2026(db_path: Optional[Path] = None) -> pd.DataFrame:
     df["pitlap"] = df["pit_lap"]
     df["Tempopneu_numeric"] = _ms_to_sec_optional(df["tempo_troca_pneus_ms"])
     df["TempoTotal_numeric"] = df["tempo_total_ms"].astype(float) / 1000.0
+    df["TempoTotal"] = df["TempoTotal_numeric"]
+    df["Tempopneu"] = df["Tempopneu_numeric"]
     df["corrida_label"] = (
         "E" + df["stage_number"].astype(str) + " " + df["race_type"].astype(str)
     )
