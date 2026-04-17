@@ -21,7 +21,7 @@ class Stage2026:
 
 CALENDAR_2026: Tuple[Stage2026, ...] = (
     Stage2026(1, "Curvelo/MG", "Circuito dos Cristais", date(2026, 3, 8)),
-    Stage2026(2, "Santa Cruz do Sul/RS", "Autódromo Internacional de Santa Cruz do Sul", date(2026, 3, 29)),
+    Stage2026(2, "Cascavel/PR", "Autódromo Zilmar Beux", date(2026, 3, 29)),
     Stage2026(3, "São Paulo/SP", "Autódromo de Interlagos", date(2026, 4, 26)),
     Stage2026(4, "Goiânia/GO", "Autódromo Internacional Ayrton Senna", date(2026, 5, 17)),
     Stage2026(5, "Cuiabá/MT", "Autódromo Internacional de Mato Grosso", date(2026, 6, 13)),
