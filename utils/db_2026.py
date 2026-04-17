@@ -11,6 +11,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, List, Optional, Tuple
 
+import pandas as pd
+
 from utils.season_2026_data import (
     CALENDAR_2026,
     EQUIPES_COR_2026,
@@ -215,6 +217,96 @@ def fetch_driver(car_number: int, db_path: Optional[Path] = None) -> Optional[sq
             "SELECT * FROM drivers_2026 WHERE car_number = ?", (car_number,)
         )
         return cur.fetchone()
+
+
+def _ms_to_sec_optional(series: pd.Series) -> pd.Series:
+    """Converte milissegundos em segundos (float); NULL vira NaN."""
+
+    def one(v: Any) -> float:
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return float("nan")
+        if pd.isna(v):
+            return float("nan")
+        return float(v) / 1000.0
+
+    return series.apply(one)
+
+
+def load_race_dataframe(
+    stage_number: int,
+    race_type: str,
+    db_path: Optional[Path] = None,
+) -> pd.DataFrame:
+    """
+    Uma corrida (etapa + Sprint/Principal) no formato próximo ao usado nas páginas 2024/2025.
+    """
+    ensure_db_ready(db_path)
+    q = """
+        SELECT p.id, p.stage_number, p.race_type, p.car_number, p.pit_lap, p.race_position,
+               p.pneu1, p.pneu2,
+               p.tempo_troca_pneus_ms, p.tempo_total_ms,
+               p.tempo_reacao_air_jack_ms, p.tempo_primeira_conexao_ms,
+               p.tempo_troca1_ms, p.tempo_troca2_ms,
+               p.video_link, p.notes, p.detail_level,
+               d.pilot_name, d.display_label, d.team_name, d.is_amattheis_extended,
+               d.amattheis_color_hex,
+               t.chart_color_hex AS team_color_hex
+        FROM pit_stop_events_2026 p
+        JOIN drivers_2026 d ON d.car_number = p.car_number
+        JOIN teams_2026 t ON t.team_name = d.team_name
+        WHERE p.stage_number = ? AND p.race_type = ?
+        ORDER BY p.pit_lap, p.car_number
+    """
+    with connect(db_path) as conn:
+        df = pd.read_sql_query(q, conn, params=[stage_number, race_type])
+    if df.empty:
+        return df
+    df = df.copy()
+    df["Numeral"] = df["car_number"]
+    df["Piloto"] = df["pilot_name"]
+    df["POS"] = df["race_position"]
+    df["pitlap"] = df["pit_lap"]
+    df["Tempopneu_numeric"] = _ms_to_sec_optional(df["tempo_troca_pneus_ms"])
+    df["TempoTotal_numeric"] = df["tempo_total_ms"].astype(float) / 1000.0
+    df["TempoTotal"] = df["TempoTotal_numeric"]
+    df["Tempopneu"] = df["Tempopneu_numeric"]
+    df["corrida_label"] = f"Etapa {stage_number} — {race_type}"
+    return df
+
+
+def load_season_dataframe_2026(db_path: Optional[Path] = None) -> pd.DataFrame:
+    """Todos os pit stops gravados na temporada 2026 (SQLite)."""
+    ensure_db_ready(db_path)
+    q = """
+        SELECT p.id, p.stage_number, p.race_type, p.car_number, p.pit_lap, p.race_position,
+               p.pneu1, p.pneu2,
+               p.tempo_troca_pneus_ms, p.tempo_total_ms,
+               p.tempo_reacao_air_jack_ms, p.tempo_primeira_conexao_ms,
+               p.tempo_troca1_ms, p.tempo_troca2_ms,
+               p.video_link, p.notes, p.detail_level,
+               d.pilot_name, d.display_label, d.team_name, d.is_amattheis_extended,
+               d.amattheis_color_hex,
+               t.chart_color_hex AS team_color_hex
+        FROM pit_stop_events_2026 p
+        JOIN drivers_2026 d ON d.car_number = p.car_number
+        JOIN teams_2026 t ON t.team_name = d.team_name
+        ORDER BY p.stage_number, p.race_type, p.pit_lap, p.car_number
+    """
+    with connect(db_path) as conn:
+        df = pd.read_sql_query(q, conn)
+    if df.empty:
+        return df
+    df = df.copy()
+    df["Numeral"] = df["car_number"]
+    df["Piloto"] = df["pilot_name"]
+    df["POS"] = df["race_position"]
+    df["pitlap"] = df["pit_lap"]
+    df["Tempopneu_numeric"] = _ms_to_sec_optional(df["tempo_troca_pneus_ms"])
+    df["TempoTotal_numeric"] = df["tempo_total_ms"].astype(float) / 1000.0
+    df["corrida_label"] = (
+        "E" + df["stage_number"].astype(str) + " " + df["race_type"].astype(str)
+    )
+    return df
 
 
 def fetch_pit_events(
