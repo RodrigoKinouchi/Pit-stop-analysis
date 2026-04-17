@@ -52,7 +52,7 @@ try:
 except Exception:
     pass
 
-# Logo da equipe Amattheis como capa grande
+# Logo da equipe Amattheis como capa
 try:
     logo_img = Image.open(AMATTHEIS_LOGO)
     st.image(logo_img, use_container_width=True)
