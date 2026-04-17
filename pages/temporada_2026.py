@@ -118,7 +118,11 @@ except Exception:
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.title("🏁 Temporada 2026")
-st.caption(f"Lendo SQLite: `{default_db_path()}`")
+st.caption(
+    f"Lendo SQLite: `{default_db_path()}`. "
+    "Na Streamlit Cloud, gravar só em disco sem commit do `.db` perde dados no redeploy — "
+    "veja o expander **Persistência** na página Entrada 2026."
+)
 
 ensure_db_ready()
 cal_rows = fetch_calendar()

@@ -3,7 +3,20 @@ SQLite — temporada 2026: esquema canônico + seed de calendário, equipes e pi
 
 Arquivo padrão: <raiz_do_projeto>/data/pitstop_2026.db (caminho absoluto, não depende do cwd).
 
-Sobrescrever: variável de ambiente PITSTOP_2026_DB com caminho completo do .db
+Caminho alternativo (ordem de prioridade):
+1) Variável de ambiente PITSTOP_2026_DB
+2) Streamlit secrets: PITSTOP_2026_DB (ex.: deploy na nuvem)
+
+Persistência no Streamlit Community Cloud
+-----------------------------------------
+O disco do contêiner é EFÊMERO: a cada redeploy (novo push) o app é clonado do Git
+e o sistema de arquivos local é recriado. Um SQLite criado só em runtime
+(data/pitstop_2026.db) NÃO volta, a menos que o ficheiro exista no repositório
+(commit + push) ou use um banco externo (Postgres, etc.).
+
+Opções para não perder dados: fazer commit do .db após gravações; usar backup
+(download na página de entrada); hospedar o app noutro sítio com disco persistente;
+ou migrar para base de dados gerida (Supabase/Neon + URL nas secrets).
 """
 
 from __future__ import annotations
@@ -33,6 +46,18 @@ def default_db_path() -> Path:
     env = os.environ.get("PITSTOP_2026_DB", "").strip()
     if env:
         return Path(env).expanduser().resolve()
+    try:
+        import streamlit as st
+
+        if hasattr(st, "secrets"):
+            try:
+                sec = st.secrets.get("PITSTOP_2026_DB")
+            except (FileNotFoundError, KeyError, AttributeError, TypeError):
+                sec = None
+            if sec:
+                return Path(str(sec).strip()).expanduser().resolve()
+    except Exception:
+        pass
     return (_PROJECT_ROOT / "data" / "pitstop_2026.db").resolve()
 
 SCHEMA_SQL = """
@@ -214,6 +239,17 @@ def ensure_db_ready(db_path: Optional[Path] = None) -> Path:
     if n == 0:
         seed_reference_data(path)
     return path
+
+
+def count_pit_events_2026(db_path: Optional[Path] = None) -> int:
+    """Quantidade de registros em pit_stop_events_2026 (0 se o ficheiro não existir)."""
+    path = get_db_path(db_path)
+    if not path.exists():
+        return 0
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        r = conn.execute("SELECT COUNT(*) FROM pit_stop_events_2026").fetchone()
+        return int(r[0]) if r else 0
 
 
 def fetch_calendar(db_path: Optional[Path] = None) -> List[sqlite3.Row]:
