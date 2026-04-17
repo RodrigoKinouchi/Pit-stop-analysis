@@ -15,6 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.db_2026 import (
+    default_db_path,
     delete_pit_event,
     ensure_db_ready,
     fetch_calendar,
@@ -58,7 +59,10 @@ def _parse_time_field(raw: str, label: str) -> Tuple[bool, Optional[str], Option
 ensure_db_ready()
 
 st.title("📝 Entrada de dados — Temporada 2026")
-st.caption("Tempos em **ss.mmm** (ex.: 12.852 = 12 s e 852 ms). Dados gravados em SQLite (`data/pitstop_2026.db`).")
+st.caption(
+    "Tempos em **ss.mmm** (ex.: 12.852 = 12 s e 852 ms). "
+    f"Banco SQLite: `{default_db_path()}` (sempre na raiz do projeto; opcional: env `PITSTOP_2026_DB`)."
+)
 
 cal_rows = fetch_calendar()
 if not cal_rows:

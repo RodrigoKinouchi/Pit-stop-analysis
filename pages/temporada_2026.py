@@ -23,6 +23,7 @@ from utils.constants import (
 )
 from utils.db_2026 import (
     _ms_to_sec_optional,
+    default_db_path,
     ensure_db_ready,
     fetch_calendar,
     load_race_dataframe,
@@ -117,6 +118,7 @@ except Exception:
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.title("🏁 Temporada 2026")
+st.caption(f"Lendo SQLite: `{default_db_path()}`")
 
 ensure_db_ready()
 cal_rows = fetch_calendar()

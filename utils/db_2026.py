@@ -1,11 +1,14 @@
 """
 SQLite — temporada 2026: esquema canônico + seed de calendário, equipes e pilotos.
 
-Arquivo padrão: data/pitstop_2026.db (criado sob demanda).
+Arquivo padrão: <raiz_do_projeto>/data/pitstop_2026.db (caminho absoluto, não depende do cwd).
+
+Sobrescrever: variável de ambiente PITSTOP_2026_DB com caminho completo do .db
 """
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -23,7 +26,14 @@ from utils.season_2026_data import (
     team_chart_color,
 )
 
-DEFAULT_DB_PATH = Path("data") / "pitstop_2026.db"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def default_db_path() -> Path:
+    env = os.environ.get("PITSTOP_2026_DB", "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+    return (_PROJECT_ROOT / "data" / "pitstop_2026.db").resolve()
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
@@ -91,7 +101,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_pit_natural_2026
 
 
 def get_db_path(custom: Optional[Path] = None) -> Path:
-    return Path(custom) if custom is not None else DEFAULT_DB_PATH
+    if custom is not None:
+        return Path(custom).expanduser().resolve()
+    return default_db_path()
 
 
 def init_db(db_path: Optional[Path] = None) -> Path:
@@ -134,8 +146,12 @@ def seed_reference_data(
         for st in CALENDAR_2026:
             cur.execute(
                 """
-                INSERT OR REPLACE INTO calendar_2026 (stage_number, city, circuit_name, event_date)
+                INSERT INTO calendar_2026 (stage_number, city, circuit_name, event_date)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(stage_number) DO UPDATE SET
+                    city = excluded.city,
+                    circuit_name = excluded.circuit_name,
+                    event_date = excluded.event_date
                 """,
                 (st.stage_number, st.city, st.circuit_name, st.event_date.isoformat()),
             )
@@ -144,8 +160,11 @@ def seed_reference_data(
             cname, chex = team_chart_color(t)
             cur.execute(
                 """
-                INSERT OR REPLACE INTO teams_2026 (team_name, chart_color_name, chart_color_hex)
+                INSERT INTO teams_2026 (team_name, chart_color_name, chart_color_hex)
                 VALUES (?, ?, ?)
+                ON CONFLICT(team_name) DO UPDATE SET
+                    chart_color_name = excluded.chart_color_name,
+                    chart_color_hex = excluded.chart_color_hex
                 """,
                 (t, cname, chex),
             )
@@ -156,10 +175,17 @@ def seed_reference_data(
             ext = 1 if num in AMATTHEIS_EXTENDED_PIT_NUMBERS_2026 else 0
             cur.execute(
                 """
-                INSERT OR REPLACE INTO drivers_2026 (
+                INSERT INTO drivers_2026 (
                     car_number, display_label, pilot_name, team_name,
                     amattheis_color_name, amattheis_color_hex, is_amattheis_extended
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(car_number) DO UPDATE SET
+                    display_label = excluded.display_label,
+                    pilot_name = excluded.pilot_name,
+                    team_name = excluded.team_name,
+                    amattheis_color_name = excluded.amattheis_color_name,
+                    amattheis_color_hex = excluded.amattheis_color_hex,
+                    is_amattheis_extended = excluded.is_amattheis_extended
                 """,
                 (num, label, pname, team, acss, ahex, ext),
             )
