@@ -245,6 +245,26 @@ def fetch_driver(car_number: int, db_path: Optional[Path] = None) -> Optional[sq
         return cur.fetchone()
 
 
+def _normalize_sqlite_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    pandas.read_sql a partir do SQLite em alguns ambientes (ex.: Linux / Python 3.13)
+    devolve nomes em minúsculas para colunas não citadas com AS explícito.
+    Padroniza nomes usados nas páginas (Pneu1, Pneu2, etc.).
+    """
+    if df.empty:
+        return df
+    rename: dict[str, str] = {}
+    lower_to_canonical = {
+        "pneu1": "Pneu1",
+        "pneu2": "Pneu2",
+    }
+    for c in df.columns:
+        key = str(c).lower()
+        if key in lower_to_canonical and c != lower_to_canonical[key]:
+            rename[c] = lower_to_canonical[key]
+    return df.rename(columns=rename) if rename else df
+
+
 def _ms_to_sec_optional(series: pd.Series) -> pd.Series:
     """Converte milissegundos em segundos (float); NULL vira NaN."""
 
@@ -287,7 +307,7 @@ def load_race_dataframe(
         df = pd.read_sql_query(q, conn, params=[stage_number, race_type])
     if df.empty:
         return df
-    df = df.copy()
+    df = _normalize_sqlite_column_names(df.copy())
     df["Numeral"] = df["car_number"]
     df["Piloto"] = df["pilot_name"]
     df["POS"] = df["race_position"]
@@ -322,7 +342,7 @@ def load_season_dataframe_2026(db_path: Optional[Path] = None) -> pd.DataFrame:
         df = pd.read_sql_query(q, conn)
     if df.empty:
         return df
-    df = df.copy()
+    df = _normalize_sqlite_column_names(df.copy())
     df["Numeral"] = df["car_number"]
     df["Piloto"] = df["pilot_name"]
     df["POS"] = df["race_position"]
