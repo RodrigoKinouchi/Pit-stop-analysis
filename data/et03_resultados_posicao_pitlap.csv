@@ -1,0 +1,64 @@
+etapa,corrida,car_number,driver_name,pos_final,status,pit_lap,pits
+3,Sprint,293,LEONARDO REIS,1,Classified,5,1
+3,Sprint,80,ALFREDINHO IBIAPINA,2,Classified,11,1
+3,Sprint,11,GAETANO DI MAURO,3,Classified,5,1
+3,Sprint,30,CESAR RAMOS,4,Classified,6,1
+3,Sprint,85,GUILHERME SALAS,5,Classified,7,1
+3,Sprint,83,GABRIEL CASAGRANDE,6,Classified,12,1
+3,Sprint,1,FELIPE FRAGA,7,Classified,5,1
+3,Sprint,8,RAFAEL SUZUKI,8,Classified,9,1
+3,Sprint,81,ARTHUR LEIST,9,Classified,9,1
+3,Sprint,18,ALLAM KHODAIR,10,Classified,9,1
+3,Sprint,27,RENAN GUERRA,11,Classified,9,1
+3,Sprint,19,FELIPE MASSA,12,Classified,3,1
+3,Sprint,10,RICARDO ZONTA,13,Classified,12,1
+3,Sprint,6,HELIO CASTRONEVES,14,Classified,11,1
+3,Sprint,0,CACA BUENO,15,Classified,6,1
+3,Sprint,21,THIAGO CAMILO,16,Classified,2,1
+3,Sprint,51,ATILA ABREU,17,Classified,8,1
+3,Sprint,301,RAFAEL REIS,18,Classified,10,1
+3,Sprint,22,ANDRE MORAES JR,19,Classified,12,1
+3,Sprint,4,JULIO CAMPOS,20,Classified,5,1
+3,Sprint,444,VICENTE ORIGE,21,Classified,6,1
+3,Sprint,7,SERGIO SETTE CAMARA,22,Classified,5,1
+3,Sprint,73,ENZO ELIAS,23,Classified,3,1
+3,Sprint,24,FELIPE BARTZ,24,Classified,5,1
+3,Sprint,38,ZEZINHO MUGGIATI,25,Classified,6,2
+3,Sprint,95,LUCAS KOHL,26,Classified,9,1
+3,Sprint,90,RICARDO MAURICIO,27,Classified,6,2
+3,Sprint,111,RUBENS BARRICHELLO,,NC,6,1
+3,Sprint,33,NELSON PIQUET JR,,NC,8,2
+3,Sprint,121,FELIPE BAPTISTA,,NC,6,2
+3,Sprint,12,LUCAS FORESTI,,NC,1,0
+3,Main,85,GUILHERME SALAS,1,Classified,12,1
+3,Main,33,NELSON PIQUET JR,2,Classified,17,1
+3,Main,111,RUBENS BARRICHELLO,3,Classified,18,1
+3,Main,8,RAFAEL SUZUKI,4,Classified,7,1
+3,Main,1,FELIPE FRAGA,5,Classified,14,1
+3,Main,83,GABRIEL CASAGRANDE,6,Classified,12,1
+3,Main,81,ARTHUR LEIST,7,Classified,28,1
+3,Main,30,CESAR RAMOS,8,Classified,9,1
+3,Main,4,JULIO CAMPOS,9,Classified,13,1
+3,Main,121,FELIPE BAPTISTA,10,Classified,12,1
+3,Main,11,GAETANO DI MAURO,11,Classified,17,1
+3,Main,18,ALLAM KHODAIR,12,Classified,11,1
+3,Main,19,FELIPE MASSA,13,Classified,20,1
+3,Main,90,RICARDO MAURICIO,14,Classified,13,1
+3,Main,51,ATILA ABREU,15,Classified,10,1
+3,Main,7,SERGIO SETTE CAMARA,16,Classified,10,1
+3,Main,29,DANIEL SERRA,17,Classified,8,1
+3,Main,0,CACA BUENO,18,Classified,6,1
+3,Main,21,THIAGO CAMILO,19,Classified,18,1
+3,Main,22,ANDRE MORAES JR,20,Classified,21,1
+3,Main,80,ALFREDINHO IBIAPINA,21,Classified,6,1
+3,Main,27,RENAN GUERRA,22,Classified,12,1
+3,Main,10,RICARDO ZONTA,23,Classified,10,1
+3,Main,6,HELIO CASTRONEVES,24,Classified,11,1
+3,Main,12,LUCAS FORESTI,25,Classified,6,1
+3,Main,301,RAFAEL REIS,26,Classified,9,1
+3,Main,95,LUCAS KOHL,27,Classified,10,1
+3,Main,24,FELIPE BARTZ,28,Classified,12,1
+3,Main,73,ENZO ELIAS,29,Classified,6,1
+3,Main,38,ZEZINHO MUGGIATI,30,Classified,7,2
+3,Main,444,VICENTE ORIGE,,NC,1,0
+3,Main,293,LEONARDO REIS,,NC,1,0
