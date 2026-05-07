@@ -227,23 +227,19 @@ def parse_results_text(raw_text: str) -> pd.DataFrame:
     for line in (raw_text or "").splitlines():
         ln = (line or "").strip()
         low = _norm(ln)
-        if "2 corrida" in low:
+        if "2 corrida" in low or "2a corrida" in low:
             race_type = "Principal"
             continue
-        if "1 corrida" in low:
+        if "1 corrida" in low or "1a corrida" in low:
             race_type = "Sprint"
             continue
-        # Ex.: "1 293 LEONARDO REIS ... 5 1"
-        toks = ln.split()
-        if len(toks) < 4:
+        # Ex.: "1 293 LEONARDO REIS ... 5 1" (pos, carro, ..., in, pits)
+        m = re.match(r"^\s*(\d{1,2})\s+(\d{1,3})\s+.+\s+(\d{1,2})\s+(\d)\s*$", ln)
+        if not m:
             continue
-        if not toks[0].isdigit() or not toks[1].isdigit():
-            continue
-        if not toks[-1].isdigit() or not toks[-2].isdigit():
-            continue
-        pos = int(toks[0])
-        car = int(toks[1])
-        pit_lap = int(toks[-2])
+        pos = int(m.group(1))
+        car = int(m.group(2))
+        pit_lap = int(m.group(3))
         rows.append(
             {
                 "race_type": race_type,
@@ -252,7 +248,8 @@ def parse_results_text(raw_text: str) -> pd.DataFrame:
                 "race_position": pos,
             }
         )
-    return pd.DataFrame(rows)
+    # Sempre devolve schema consistente, mesmo vazio
+    return pd.DataFrame(rows, columns=["race_type", "car_number", "pit_lap", "race_position"])
 
 
 def merge_with_results(import_df: pd.DataFrame, results_df: pd.DataFrame) -> pd.DataFrame:
