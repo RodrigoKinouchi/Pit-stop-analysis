@@ -41,8 +41,39 @@ def build_driver_lookup(drivers_rows: List) -> Dict[str, int]:
     return lookup
 
 
+def _pit_report_alias(name: str) -> str:
+    aliases = {
+        "e elias": "enzo elias",
+        "g di mauro": "gaetano di mauro",
+        "r zonta": "ricardo zonta",
+        "casagrande": "gabriel casagrande",
+        "gui salas": "guilherme salas",
+        "r barrichello": "rubens barrichello",
+        "j campos": "julio campos",
+        "muggiati": "zezinho muggiati",
+        "a khodair": "allam khodair",
+        "f massa": "felipe massa",
+        "h castroneves": "helio castroneves",
+        "a ibiapina": "alfredinho ibiapina",
+        "leo reis": "leonardo reis",
+        "r mauricio": "ricardo mauricio",
+        "a leist": "arthur leist",
+        "r suzuki": "rafael suzuki",
+        "n piquet": "nelson piquet jr",
+        "c ramos": "cesar ramos",
+        "t camilo": "thiago camilo",
+        "v orige": "vicente orige",
+        "r guerra": "renan guerra",
+        "f bartz": "felipe bartz",
+        "sette camara": "sergio sette camara",
+        "f baptista": "felipe baptista",
+        "d serra": "daniel serra",
+    }
+    return aliases.get(name, name)
+
+
 def _map_driver_to_car(driver_name: str, driver_lookup: Dict[str, int]) -> Optional[int]:
-    key = _norm(driver_name)
+    key = _pit_report_alias(_norm(driver_name))
     if key in driver_lookup:
         return driver_lookup[key]
     return None
@@ -143,6 +174,9 @@ def parse_pit_report_text(
         if not m:
             continue
         _, stage, corr, pilot, tempo = m.groups()
+        # Evita capturar tabelas de movimento/troca que trazem numeros extras no "nome".
+        if any(ch.isdigit() for ch in pilot):
+            continue
         car = _map_driver_to_car(pilot, driver_lookup)
         if car is None:
             warnings.append(f"Piloto não mapeado automaticamente: {pilot}")
@@ -163,7 +197,12 @@ def parse_pit_report_text(
 
 
 def parse_results_file(file_bytes: bytes, filename: str) -> pd.DataFrame:
-    parsed = parse_structured_file(file_bytes, filename).df
+    fn = filename.lower()
+    if fn.endswith((".csv", ".xlsx", ".xls")):
+        parsed = parse_structured_file(file_bytes, filename).df
+    else:
+        txt, _ = extract_text_from_upload(file_bytes, filename)
+        parsed = parse_results_text(txt)
     parsed = _standardize_columns(parsed)
     # Aceita as colunas do CSV gerado no fluxo anterior
     if "corrida" in parsed.columns and "race_type" not in parsed.columns:
@@ -176,6 +215,44 @@ def parse_results_file(file_bytes: bytes, filename: str) -> pd.DataFrame:
             "Arquivo de resultados precisa ter: race_type, car_number, pit_lap, race_position (ou pos_final)."
         )
     return parsed
+
+
+def parse_results_text(raw_text: str) -> pd.DataFrame:
+    """
+    Parser tolerante para PDF de resultado oficial.
+    Extrai: race_type, car_number, pit_lap, race_position.
+    """
+    rows: List[dict] = []
+    race_type = "Sprint"
+    for line in (raw_text or "").splitlines():
+        ln = (line or "").strip()
+        low = _norm(ln)
+        if "2 corrida" in low:
+            race_type = "Principal"
+            continue
+        if "1 corrida" in low:
+            race_type = "Sprint"
+            continue
+        # Ex.: "1 293 LEONARDO REIS ... 5 1"
+        toks = ln.split()
+        if len(toks) < 4:
+            continue
+        if not toks[0].isdigit() or not toks[1].isdigit():
+            continue
+        if not toks[-1].isdigit() or not toks[-2].isdigit():
+            continue
+        pos = int(toks[0])
+        car = int(toks[1])
+        pit_lap = int(toks[-2])
+        rows.append(
+            {
+                "race_type": race_type,
+                "car_number": car,
+                "pit_lap": pit_lap,
+                "race_position": pos,
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def merge_with_results(import_df: pd.DataFrame, results_df: pd.DataFrame) -> pd.DataFrame:

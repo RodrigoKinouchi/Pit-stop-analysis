@@ -259,7 +259,7 @@ else:
     )
     result_file = st.file_uploader(
         "Arquivo opcional de resultados (para preencher posição e pit lap)",
-        type=["csv", "xlsx", "xls"],
+        type=["csv", "xlsx", "xls", "pdf", "txt", "png", "jpg", "jpeg"],
     )
 
     df_import = pd.DataFrame()
