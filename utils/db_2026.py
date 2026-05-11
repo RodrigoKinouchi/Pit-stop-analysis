@@ -232,12 +232,10 @@ def connect(db_path: Optional[Path] = None) -> Generator[sqlite3.Connection, Non
 
 
 def ensure_db_ready(db_path: Optional[Path] = None) -> Path:
-    """Garante DDL aplicado e referências (calendário/pilotos) presentes."""
+    """Garante DDL aplicado e referências (calendário/pilotos/equipes) alinhadas ao Python."""
     path = init_db(db_path)
-    with sqlite3.connect(path) as conn:
-        n = conn.execute("SELECT COUNT(*) FROM calendar_2026").fetchone()[0]
-    if n == 0:
-        seed_reference_data(path)
+    # Sempre ressincroniza com utils.season_2026_data (upsert; não apaga pit_stop_events_2026).
+    seed_reference_data(path, wipe_all=False)
     return path
 
 

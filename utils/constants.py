@@ -88,6 +88,18 @@ def get_drivers_names(season: int = 2024):
         return d
     return drivers_names
 
+
+def _team_info_2026() -> dict:
+    """Número do carro → nome canónico da equipe (Stock Car 2026)."""
+    from utils.season_2026_data import EQUIPES_PILOTOS_2026, parse_driver_label
+
+    out: dict = {}
+    for label, team in EQUIPES_PILOTOS_2026.items():
+        num, _ = parse_driver_label(label)
+        out[num] = team
+    return out
+
+
 # Dicionário de informações dos times (2024)
 team_info = {
     121: 'Crown',
@@ -159,6 +171,8 @@ def get_team_info(season: int = 2024):
     """Retorna dicionário de times para a temporada especificada"""
     if season == 2025:
         return team_info_2025
+    if season == 2026:
+        return _team_info_2026()
     return team_info
 
 # Dicionário de cores por equipe (2025)
@@ -200,9 +214,14 @@ def get_pilot_color_by_team(numeral, season: int = 2025):
         return None
     
     team_name = team_dict.get(numeral_int)
-    if team_name:
-        return team_colors_2025.get(team_name)
-    return None
+    if not team_name:
+        return None
+    if season == 2026:
+        from utils.season_2026_data import team_chart_color
+
+        _, chex = team_chart_color(team_name)
+        return chex
+    return team_colors_2025.get(team_name)
 
 # Função para criar dicionário de cores por piloto (nome do piloto -> cor)
 def get_pilot_color_map(df=None, season: int = 2025):
@@ -210,7 +229,7 @@ def get_pilot_color_map(df=None, season: int = 2025):
     
     Args:
         df: DataFrame (não usado, mantido para compatibilidade)
-        season: Temporada (2024 ou 2025)
+        season: Temporada (2024, 2025 ou 2026)
     
     Returns:
         dict: Dicionário mapeando nome do piloto para cor da equipe
@@ -221,22 +240,43 @@ def get_pilot_color_map(df=None, season: int = 2025):
     
     for numeral_str, pilot_name in drivers_dict.items():
         numeral_int = int(numeral_str) if numeral_str.isdigit() else None
-        if numeral_int is not None:
-            team_name = team_dict.get(numeral_int)
-            if team_name and team_name in team_colors_2025:
-                color_map[pilot_name] = team_colors_2025[team_name]
-    
+        if numeral_int is None:
+            continue
+        team_name = team_dict.get(numeral_int)
+        if not team_name:
+            continue
+        if season == 2026:
+            from utils.season_2026_data import team_chart_color
+
+            _, chex = team_chart_color(team_name)
+            color_map[pilot_name] = chex
+        elif team_name in team_colors_2025:
+            color_map[pilot_name] = team_colors_2025[team_name]
+
     return color_map
 
 
 def get_amattheis_color_map(season: int = 2025):
     """Retorna mapa de cores no padrão Amattheis (pilotos destacados, demais cinza)"""
+    if season == 2026:
+        from utils.season_2026_data import (
+            EQUIPES_PILOTOS_2026,
+            amattheis_viz_color_for,
+            parse_driver_label,
+        )
+
+        color_map = {}
+        for label in EQUIPES_PILOTOS_2026:
+            num, name = parse_driver_label(label)
+            _, hexv = amattheis_viz_color_for(label, num)
+            color_map[name] = hexv
+        return color_map
+
     drivers_dict = get_drivers_names(season)
     color_map = {}
-    
     for numeral_str, pilot_name in drivers_dict.items():
         color_map[pilot_name] = amattheis_color_scheme_2025.get(numeral_str, AMATTHEIS_NEUTRAL_COLOR)
-    
+
     return color_map
 
 # Dicionário de imagens dos circuitos
