@@ -47,7 +47,7 @@ EQUIPES_PILOTOS_2026: Dict[str, str] = {
     "111 - Rubens Barrichello": "SCUDERIA BANDEIRAS SPORTS",
     "38 - Zezinho Muggiati": "TEAM RC",
     "21 - Thiago Camilo": "MERCADO LIVRE RACING TEAM",
-    "73 - Enzo Elias": "AMATTHEIS/TMG",
+    "73 - Enzo Elias": "TMG RACING",
     "81 - Arthur Leist": "CROWN RACING",
     "12 - Lucas Foresti": "VOGEL MOTORSPORT",
     "30 - Cesar Ramos": "MERCADO LIVRE RACING TEAM",
@@ -60,8 +60,8 @@ EQUIPES_PILOTOS_2026: Dict[str, str] = {
     "301 - Rafael Reis": "CAR RACING",
     "51 - Atila Abreu": "SCUDERIA BANDEIRAS SPORT",
     "80 - Alfredinho Ibiapina": "FULL TIME GAZOO RACING",
-    "27 - Renan Guerra": "AMATTHEIS/TMG",
-    "6 - Helio Castroneves": "MERCADO LIVRE RACING",
+    "27 - Renan Guerra": "AMATTHEIS",
+    "6 - Helio Castroneves": "MERCADO LIVRE RACING TEAM",
     "10 - Ricardo Zonta": "FULL TIME GAZOO RACING",
     "22 - Andre Moraes Jr": "SCUDERIA CHIARELLI",
     "95 - Lucas Kohl": "CROWN RACING",
@@ -91,7 +91,7 @@ EQUIPES_COR_2026: Dict[str, str] = {
     "SCUDERIA BANDEIRAS SPORTS": "silver",
     "SCUDERIA BANDEIRAS": "lightblue",
     "SCUDERIA BANDEIRAS SPORT": "silver",
-    "AMATTHEIS/TMG": "navy",
+    "AMATTHEIS": "navy",
 }
 
 # Mapa Amattheis (visualização): destaque para pilotos do programa; demais podem usar neutro no app
