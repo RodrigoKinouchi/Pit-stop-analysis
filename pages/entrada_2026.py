@@ -24,13 +24,11 @@ from utils.db_2026 import (
     fetch_pit_events,
     upsert_pit_stop_event,
 )
-from utils.import_2026 import (
-    build_driver_lookup,
-    extract_text_from_upload,
-    merge_with_results,
-    parse_pit_report_text,
-    parse_results_file,
-    parse_structured_file,
+from utils.stage_csv_2026 import (
+    filter_stage_df,
+    load_stage_csv_bytes,
+    row_to_app_dict,
+    validate_rows_for_sqlite,
 )
 from utils.time_format import format_ms_to_ss_mmm, parse_ss_mmm_to_ms
 
@@ -67,10 +65,6 @@ def _parse_time_field(raw: str, label: str) -> Tuple[bool, Optional[str], Option
 ensure_db_ready()
 
 st.title("📝 Entrada de dados — Temporada 2026")
-st.caption(
-    "Tempos em **ss.mmm** (ex.: 12.852 = 12 s e 852 ms). "
-    f"Banco SQLite: `{default_db_path()}` (env `PITSTOP_2026_DB` ou secret homónimo)."
-)
 
 _db_path = default_db_path()
 if _db_path.exists():
@@ -93,9 +87,101 @@ stage_number = int(cal_rows[stage_pick]["stage_number"])
 
 race_type = st.selectbox("Corrida", ["Sprint", "Principal"])
 
+MODE_OPTS = ("Manual", "CSV da etapa")
+mode = st.radio("Modo de entrada", MODE_OPTS, horizontal=True, key="ent26_mode_simple")
+
+if mode == MODE_OPTS[1]:
+    st.subheader("CSV da etapa")
+    up_csv = st.file_uploader(
+        "Envie o ficheiro stageX.csv (ex.: stage1.csv)",
+        type=["csv"],
+        key="ent26_stage_csv_upload",
+    )
+    if st.button("Carregar CSV", key="ent26_load_upload"):
+        if up_csv is None:
+            st.error("Escolha um ficheiro CSV primeiro.")
+        else:
+            try:
+                st.session_state["ent26_stage_df"] = load_stage_csv_bytes(up_csv.getvalue(), up_csv.name)
+                st.success("CSV carregado.")
+                st.rerun()
+            except Exception as ex:
+                st.error(str(ex))
+
+    sdf = st.session_state.get("ent26_stage_df")
+    if sdf is not None and not sdf.empty:
+        sub = filter_stage_df(sdf, stage_number, race_type)
+        st.caption(f"{len(sub)} linha(s) para etapa **{stage_number}** e **{race_type}**.")
+        st.dataframe(sub, use_container_width=True, hide_index=True)
+        if sub.empty:
+            st.info("Nenhuma linha neste CSV para a etapa e tipo de corrida selecionados.")
+        else:
+            ix_list = list(sub.index)
+
+            def _row_preview(i: int) -> str:
+                r = sub.loc[ix_list[i]]
+                return (
+                    f"#{r['car_number']} | pit volta {r['pit_lap']} | pos {r['race_position']} "
+                    f"| total {r['tempo_total']}"
+                )
+
+            sel_i = st.selectbox(
+                "Escolher linha para copiar ao formulário manual",
+                range(len(ix_list)),
+                format_func=_row_preview,
+                key="ent26_stage_row_pick",
+            )
+            if st.button("Aplicar linha ao manual", key="ent26_apply_row"):
+                st.session_state["ent26_prefill"] = row_to_app_dict(sub.loc[ix_list[sel_i]])
+                st.session_state["ent26_mode_simple"] = MODE_OPTS[0]
+                st.rerun()
+
+            if st.button("Gravar todas as linhas filtradas no SQLite", type="primary", key="ent26_batch_csv"):
+                rows = [row_to_app_dict(sub.loc[i]) for i in ix_list]
+                ok_rows, errs = validate_rows_for_sqlite(rows, parse_ss_mmm_to_ms)
+                if errs:
+                    st.error("Erros de validação:\n- " + "\n- ".join(errs[:40]))
+                else:
+                    inserted = updated = failed = 0
+                    for r in ok_rows:
+                        drv_r = fetch_driver(r["car_number"])
+                        is_ext_r = bool(drv_r and drv_r["is_amattheis_extended"])
+                        dl = "amattheis_extended" if is_ext_r else "standard"
+                        p2 = r["pneu2"] if r["race_type"] == "Principal" else None
+                        try:
+                            _, action = upsert_pit_stop_event(
+                                stage_number=r["stage_number"],
+                                race_type=r["race_type"],
+                                car_number=r["car_number"],
+                                pit_lap=r["pit_lap"],
+                                race_position=r["race_position"],
+                                pneu1=r["pneu1"],
+                                pneu2=p2,
+                                tempo_troca_pneus_ms=r["tempo_troca_pneus_ms"],
+                                tempo_total_ms=r["tempo_total_ms"],
+                                tempo_reacao_air_jack_ms=None,
+                                tempo_primeira_conexao_ms=None,
+                                tempo_troca1_ms=None,
+                                tempo_troca2_ms=None,
+                                video_link=r.get("video_link"),
+                                notes=r.get("notes"),
+                                detail_level=dl,
+                            )
+                            if action == "inserted":
+                                inserted += 1
+                            else:
+                                updated += 1
+                        except Exception:
+                            failed += 1
+                    st.success(
+                        f"Lote CSV: inseridos={inserted}, atualizados={updated}, falhas={failed}."
+                    )
+                    st.rerun()
+
+_prefill = st.session_state.pop("ent26_prefill", None)
+
 drivers = fetch_drivers()
 car_options = [int(d["car_number"]) for d in drivers]
-driver_lookup = build_driver_lookup(drivers)
 
 
 def _label_car(n: int) -> str:
@@ -105,39 +191,71 @@ def _label_car(n: int) -> str:
     return str(n)
 
 
-car_number = st.selectbox("Piloto / carro", car_options, format_func=_label_car)
+def _pneu_ix(name: Optional[str]) -> int:
+    if name and name in PNEU_OPTIONS:
+        return PNEU_OPTIONS.index(name)
+    return PNEU_OPTIONS.index("Não registrado")
+
+
+_car_ix = 0
+if _prefill:
+    try:
+        _car_ix = car_options.index(int(_prefill["car_number"]))
+    except ValueError:
+        st.warning(
+            f"Carro {_prefill['car_number']} não está no calendário de pilotos; ajuste a seleção."
+        )
+        _car_ix = 0
+
+car_number = st.selectbox("Piloto / carro", car_options, format_func=_label_car, index=_car_ix)
 
 drv = fetch_driver(car_number)
 is_ext = bool(drv and drv["is_amattheis_extended"])
 
+_pit_def = int(_prefill["pit_lap"]) if _prefill else 1
+_pos_def = str(_prefill["race_position"]) if _prefill else "1"
+
 col_a, col_b, col_c = st.columns(3)
 with col_a:
-    pit_lap = st.number_input("Volta do pit", min_value=1, value=1, step=1)
+    pit_lap = st.number_input("Volta do pit", min_value=1, value=_pit_def, step=1)
 with col_b:
-    race_position = st.text_input("Posição na corrida", value="1", help="Número ou DNF")
+    race_position = st.text_input(
+        "Posição na corrida",
+        value=_pos_def,
+        help="Número ou DNF / DQ",
+    )
 with col_c:
     st.metric("Nível de detalhe", "Amattheis (estendido)" if is_ext else "Padrão (grid)")
 
-pneu1 = st.selectbox("Pneu 1", PNEU_OPTIONS)
+_p1_ix = _pneu_ix(str(_prefill["pneu1"])) if _prefill else _pneu_ix("TD")
+pneu1 = st.selectbox("Pneu 1", PNEU_OPTIONS, index=_p1_ix)
 if race_type == "Principal":
-    pneu2 = st.selectbox("Pneu 2", PNEU_OPTIONS)
+    _p2_raw = str(_prefill["pneu2"]) if _prefill and _prefill.get("pneu2") else None
+    _p2_ix = _pneu_ix(_p2_raw)
+    pneu2 = st.selectbox("Pneu 2", PNEU_OPTIONS, index=_p2_ix)
 else:
     pneu2 = None
 
 st.subheader("Tempos (ss.mmm ou NR)")
 
+_tt_p_def = ""
+_tt_tot_def = ""
+if _prefill:
+    _tt_p_def = str(_prefill.get("tempo_troca_pneus_dot") or "")
+    _tt_tot_def = str(_prefill.get("tempo_total_dot") or "")
+
 c1, c2 = st.columns(2)
 with c1:
-    tt_pneu_raw = st.text_input("Troca de pneus (tempo)", placeholder="12.852 ou NR")
+    tt_pneu_raw = st.text_input("Troca de pneus (tempo)", value=_tt_p_def, placeholder="12.852 ou NR")
 with c2:
-    tt_total_raw = st.text_input("Tempo total *", placeholder="obrigatório")
+    tt_total_raw = st.text_input("Tempo total *", value=_tt_tot_def, placeholder="obrigatório")
 
 tempo_reacao_raw = ""
 tempo_1c_raw = ""
 tempo_t1_raw = ""
 tempo_t2_raw = ""
-video_link = ""
-notes = ""
+_vid_def = str(_prefill["video_link"]) if _prefill and _prefill.get("video_link") else ""
+_notes_def = str(_prefill["notes"]) if _prefill and _prefill.get("notes") else ""
 
 if is_ext:
     st.markdown("**Segmentos Amattheis**")
@@ -149,18 +267,15 @@ if is_ext:
         tempo_t1_raw = st.text_input("Troca 1 (pistola e encaixe)", placeholder="NR")
         if race_type == "Principal":
             tempo_t2_raw = st.text_input("Troca 2 (pistola e encaixe)", placeholder="NR")
-    video_link = st.text_input("Link do vídeo (opcional)", "")
-    notes = st.text_area("Observações (opcional)", "")
+    video_link = st.text_input("Link do vídeo (opcional)", value=_vid_def)
+    notes = st.text_area("Observações (opcional)", value=_notes_def)
+else:
+    video_link = st.text_input("Link do vídeo (opcional)", value=_vid_def)
+    notes = st.text_area("Observações (opcional)", value=_notes_def)
 
 detail_level = "amattheis_extended" if is_ext else "standard"
 
-mode = st.radio(
-    "Modo de entrada",
-    ["Manual", "Upload em lote (CSV/Excel/Relatório)"],
-    horizontal=True,
-)
-
-if mode == "Manual":
+if mode == MODE_OPTS[0]:
     if st.button("Gravar pit stop", type="primary"):
         err: List[str] = []
         ok_t, msg, tempo_troca_pneus_ms_v = _parse_time_field(tt_pneu_raw, "Troca de pneus")
@@ -225,181 +340,6 @@ if mode == "Manual":
                 st.rerun()
             except Exception as ex:
                 st.error(f"Erro ao gravar: {ex}")
-else:
-    st.subheader("Upload em lote")
-    st.caption(
-        "Aceita CSV/Excel já estruturado, ou PDF/TXT/imagem com OCR para extrair linhas do relatório de pit."
-    )
-    template_df = pd.DataFrame(
-        [
-            {
-                "stage_number": stage_number,
-                "race_type": race_type,
-                "car_number": 1,
-                "pit_lap": 5,
-                "race_position": 7,
-                "tempo_total": "9.340",
-                "tempo_troca_pneus": "9.340",
-                "pneu1": "Não registrado",
-                "pneu2": "",
-                "video_link": "",
-                "notes": "modelo",
-            }
-        ]
-    )
-    st.download_button(
-        "Baixar template CSV",
-        template_df.to_csv(index=False).encode("utf-8"),
-        file_name="template_entrada_2026.csv",
-        mime="text/csv",
-    )
-    data_file = st.file_uploader(
-        "Arquivo principal (CSV/Excel/PDF/TXT/PNG/JPG)",
-        type=["csv", "xlsx", "xls", "pdf", "txt", "png", "jpg", "jpeg"],
-    )
-    result_file = st.file_uploader(
-        "Arquivo opcional de resultados (para preencher posição e pit lap)",
-        type=["csv", "xlsx", "xls", "pdf", "txt", "png", "jpg", "jpeg"],
-    )
-
-    df_import = pd.DataFrame()
-    parse_warnings: List[str] = []
-    if data_file:
-        raw = data_file.getvalue()
-        name = data_file.name.lower()
-        try:
-            if name.endswith((".csv", ".xlsx", ".xls")):
-                parsed = parse_structured_file(raw, data_file.name)
-                df_import = parsed.df
-                parse_warnings.extend(parsed.warnings)
-            else:
-                txt, warns = extract_text_from_upload(raw, data_file.name)
-                parse_warnings.extend(warns)
-                parsed = parse_pit_report_text(txt, driver_lookup, default_stage=stage_number)
-                df_import = parsed.df
-                parse_warnings.extend(parsed.warnings)
-        except Exception as ex:
-            st.error(f"Falha ao ler arquivo principal: {ex}")
-
-    if not df_import.empty and result_file is not None:
-        try:
-            results_df = parse_results_file(result_file.getvalue(), result_file.name)
-            df_import = merge_with_results(df_import, results_df)
-        except Exception as ex:
-            st.error(f"Falha ao aplicar arquivo de resultados: {ex}")
-
-    if parse_warnings:
-        uniq_warns = []
-        seen_w = set()
-        for w in parse_warnings:
-            if w not in seen_w:
-                uniq_warns.append(w)
-                seen_w.add(w)
-        st.warning("Avisos de parsing:\n- " + "\n- ".join(uniq_warns[:15]))
-
-    if not df_import.empty:
-        if "stage_number" not in df_import.columns:
-            df_import["stage_number"] = stage_number
-        if "race_type" not in df_import.columns:
-            df_import["race_type"] = race_type
-
-        required_cols = ["stage_number", "race_type", "car_number", "pit_lap", "race_position", "tempo_total"]
-        for c in required_cols:
-            if c not in df_import.columns:
-                df_import[c] = None
-        if "tempo_troca_pneus" not in df_import.columns:
-            df_import["tempo_troca_pneus"] = df_import["tempo_total"]
-        if "pneu1" not in df_import.columns:
-            df_import["pneu1"] = "Não registrado"
-        if "pneu2" not in df_import.columns:
-            df_import["pneu2"] = None
-        if "video_link" not in df_import.columns:
-            df_import["video_link"] = None
-        if "notes" not in df_import.columns:
-            df_import["notes"] = "Importado em lote"
-
-        st.dataframe(df_import, use_container_width=True)
-
-        errors: List[str] = []
-        valid_rows = []
-        for idx, r in df_import.iterrows():
-            row_id = idx + 1
-            try:
-                stg = int(r["stage_number"])
-                rtype = str(r["race_type"]).strip()
-                if rtype not in ("Sprint", "Principal", "Main"):
-                    errors.append(f"Linha {row_id}: race_type inválido ({rtype}).")
-                    continue
-                if rtype == "Main":
-                    rtype = "Principal"
-                car = int(r["car_number"])
-                lap = int(r["pit_lap"])
-                pos = str(r["race_position"]).strip() if pd.notna(r["race_position"]) else "DNF"
-                t_total = parse_ss_mmm_to_ms(str(r["tempo_total"]))
-                if t_total is None:
-                    errors.append(f"Linha {row_id}: tempo_total inválido ({r['tempo_total']}).")
-                    continue
-                t_pneu = parse_ss_mmm_to_ms(str(r["tempo_troca_pneus"]))
-                valid_rows.append(
-                    {
-                        "stage_number": stg,
-                        "race_type": rtype,
-                        "car_number": car,
-                        "pit_lap": lap,
-                        "race_position": pos,
-                        "tempo_total_ms": t_total,
-                        "tempo_troca_pneus_ms": t_pneu,
-                        "pneu1": str(r.get("pneu1", "Não registrado")),
-                        "pneu2": (str(r.get("pneu2")).strip() or None) if pd.notna(r.get("pneu2")) else None,
-                        "video_link": (str(r.get("video_link")).strip() or None)
-                        if pd.notna(r.get("video_link"))
-                        else None,
-                        "notes": (str(r.get("notes")).strip() or "Importado em lote")
-                        if pd.notna(r.get("notes"))
-                        else "Importado em lote",
-                    }
-                )
-            except Exception as ex:
-                errors.append(f"Linha {row_id}: erro de validação ({ex}).")
-
-        if errors:
-            st.error("Erros encontrados no lote:")
-            st.code("\n".join(errors[:50]))
-        else:
-            if st.button("Gravar lote no SQLite", type="primary"):
-                inserted = 0
-                updated = 0
-                failed = 0
-                for row in valid_rows:
-                    try:
-                        _, action = upsert_pit_stop_event(
-                            stage_number=row["stage_number"],
-                            race_type=row["race_type"],
-                            car_number=row["car_number"],
-                            pit_lap=row["pit_lap"],
-                            race_position=row["race_position"],
-                            pneu1=row["pneu1"],
-                            pneu2=row["pneu2"],
-                            tempo_troca_pneus_ms=row["tempo_troca_pneus_ms"],
-                            tempo_total_ms=row["tempo_total_ms"],
-                            tempo_reacao_air_jack_ms=None,
-                            tempo_primeira_conexao_ms=None,
-                            tempo_troca1_ms=None,
-                            tempo_troca2_ms=None,
-                            video_link=row["video_link"],
-                            notes=row["notes"],
-                            detail_level="standard",
-                        )
-                        if action == "inserted":
-                            inserted += 1
-                        else:
-                            updated += 1
-                    except Exception:
-                        failed += 1
-                st.success(
-                    f"Lote processado: inseridos={inserted}, atualizados={updated}, falhas={failed}."
-                )
-                st.rerun()
 
 st.markdown("---")
 st.subheader("Registros nesta etapa e corrida")
