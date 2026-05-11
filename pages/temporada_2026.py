@@ -560,7 +560,37 @@ with tabs[2]:
                     inplace=True,
                 )
                 st.subheader("Média dos rankings dos pilotos selecionados")
-                st.dataframe(media_rankings, use_container_width=True)
+                _mr = media_rankings.copy()
+                _cols_med = (
+                    "Média ranking tempo total",
+                    "Média ranking tempo pneus",
+                    "Média ranking tempo piloto",
+                )
+                for _c in _cols_med:
+                    _mr[_c] = pd.to_numeric(_mr[_c], errors="coerce").round(1)
+                st.dataframe(
+                    _mr,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Piloto": st.column_config.TextColumn("Piloto", alignment="center"),
+                        "Média ranking tempo total": st.column_config.NumberColumn(
+                            "Média ranking tempo total",
+                            format="%.1f",
+                            alignment="center",
+                        ),
+                        "Média ranking tempo pneus": st.column_config.NumberColumn(
+                            "Média ranking tempo pneus",
+                            format="%.1f",
+                            alignment="center",
+                        ),
+                        "Média ranking tempo piloto": st.column_config.NumberColumn(
+                            "Média ranking tempo piloto",
+                            format="%.1f",
+                            alignment="center",
+                        ),
+                    },
+                )
 
 with tabs[3]:
     if df_all.empty or len(df_all) < 2:
