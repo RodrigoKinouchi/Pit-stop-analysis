@@ -434,27 +434,60 @@ with tabs[3]:
     if df_all.empty or len(df_all) < 2:
         st.info("Inclua pits de mais carros/corridas para comparar equipes (box plot precisa de volume).")
     else:
-        team_colors = {t: h for t, h in zip(df_all["team_name"], df_all["team_color_hex"])}
-        figb = px.box(
-            df_all,
-            x="team_name",
-            y="TempoTotal_numeric",
-            color="team_name",
-            color_discrete_map=team_colors,
-            title="Tempo total de pit por equipe — todas as entradas 2026",
-            labels={"team_name": "Equipe", "TempoTotal_numeric": "s"},
+        st.caption(
+            "Para cada **corrida** (etapa + Sprint ou Principal), calcula-se o **melhor** tempo da corrida; "
+            "cada pit vira **delta = tempo − melhor** (s). O boxplot mostra a distribuição desses deltas por **equipe** — "
+            "assim dá para comparar performance entre pistas diferentes."
         )
-        figb.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
-        st.plotly_chart(figb, use_container_width=True)
+        team_colors = (
+            df_all.drop_duplicates(subset=["team_name"])
+            .set_index("team_name")["team_color_hex"]
+            .to_dict()
+        )
+        _per_race = df_all.groupby(["stage_number", "race_type"], as_index=False).agg(
+            melhor_total=("TempoTotal_numeric", "min"),
+            melhor_pneu=("Tempopneu_numeric", "min"),
+        )
+        _deltas = df_all.merge(_per_race, on=["stage_number", "race_type"], how="left")
+        _deltas["delta_total_s"] = _deltas["TempoTotal_numeric"] - _deltas["melhor_total"]
+        _deltas["delta_pneu_s"] = _deltas["Tempopneu_numeric"] - _deltas["melhor_pneu"]
 
-        figbp = px.box(
-            df_all,
-            x="team_name",
-            y="Tempopneu_numeric",
-            color="team_name",
-            color_discrete_map=team_colors,
-            title="Troca de pneus por equipe — todas as entradas 2026",
-            labels={"team_name": "Equipe", "Tempopneu_numeric": "s"},
-        )
-        figbp.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
-        st.plotly_chart(figbp, use_container_width=True)
+        df_delta_total = _deltas.dropna(subset=["delta_total_s"])
+        df_delta_pneu = _deltas.dropna(subset=["delta_pneu_s"])
+
+        if len(df_delta_total) < 2:
+            st.warning("Dados insuficientes para o boxplot de tempo total (delta).")
+        else:
+            figb = px.box(
+                df_delta_total,
+                x="team_name",
+                y="delta_total_s",
+                color="team_name",
+                color_discrete_map=team_colors,
+                title="Delta do tempo total vs melhor pit da corrida — por equipe (2026)",
+                labels={"team_name": "Equipe", "delta_total_s": "Δ vs melhor (s)"},
+            )
+            figb.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False
+            )
+            st.plotly_chart(figb, use_container_width=True)
+
+        if len(df_delta_pneu) < 2:
+            st.warning(
+                "Dados insuficientes para o boxplot de troca de pneus (delta). "
+                "Corridas só com troca de pneus NR/vazia não entram."
+            )
+        else:
+            figbp = px.box(
+                df_delta_pneu,
+                x="team_name",
+                y="delta_pneu_s",
+                color="team_name",
+                color_discrete_map=team_colors,
+                title="Delta da troca de pneus vs melhor da corrida — por equipe (2026)",
+                labels={"team_name": "Equipe", "delta_pneu_s": "Δ vs melhor (s)"},
+            )
+            figbp.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False
+            )
+            st.plotly_chart(figbp, use_container_width=True)
