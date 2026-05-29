@@ -45,6 +45,18 @@ def _parado_sec_from_notes(notes: object) -> float:
     return float(m.group(1).replace(",", "."))
 
 
+def _ensure_tempo_parado_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Garante TempoParado_numeric (fallback se load_season não enriqueceu)."""
+    if df.empty or "TempoParado_numeric" in df.columns:
+        return df
+    out = df.copy()
+    if "notes" in out.columns:
+        out["TempoParado_numeric"] = out["notes"].map(_parado_sec_from_notes)
+    else:
+        out["TempoParado_numeric"] = float("nan")
+    return out
+
+
 def _format_stage_option(row: sqlite3.Row) -> str:
     d = row["event_date"]
     try:
@@ -162,7 +174,7 @@ except Exception:
     pass
 
 df = load_race_dataframe(stage_number, race_type)
-df_all = load_season_dataframe_2026()
+df_all = _ensure_tempo_parado_column(load_season_dataframe_2026())
 
 if df.empty:
     st.info(
