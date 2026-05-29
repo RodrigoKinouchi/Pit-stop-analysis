@@ -67,12 +67,52 @@ def stage_csv_path(stage_number: int, base_dir: Optional[Path] = None) -> Path:
     return (root / f"stage{int(stage_number)}.csv").resolve()
 
 
+def _parse_semicolon_stage_csv_text(text: str) -> pd.DataFrame:
+    """
+    Parser tolerante para stageX.csv com `;`.
+    - Remove `;` final vazio (links YouTube com `;` no fim da linha).
+    - Sprint: se o link estiver na coluna pneu2, desloca para video_link.
+    """
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return pd.DataFrame()
+    header_parts = lines[0].split(";")
+    ncols = len(header_parts)
+    rows: list[list[str]] = []
+    for line in lines[1:]:
+        parts = line.split(";")
+        while parts and parts[-1] == "":
+            parts.pop()
+        if len(parts) > ncols:
+            parts = parts[: ncols - 1] + [";".join(parts[ncols - 1 :])]
+        if len(parts) < ncols:
+            parts = parts + [""] * (ncols - len(parts))
+        if len(parts) >= 11 and parts[1].strip().upper() == "SPRINT":
+            p9 = parts[9].strip()
+            p10 = parts[10].strip() if len(parts) > 10 else ""
+            if p9.lower().startswith("http") and not p10:
+                parts = parts[:9] + ["", p9]
+        rows.append(parts[:ncols])
+    return pd.DataFrame(rows, columns=header_parts)
+
+
 def load_stage_csv_bytes(data: bytes, filename: str = "stage.csv") -> pd.DataFrame:
     """Lê CSV/bytes no formato stageX (sep `;` ou `,`)."""
     bio = __import__("io").BytesIO(data)
     df = None
     for enc in ("utf-8-sig", "utf-8", "latin-1"):
-        for sep in (";", ","):
+        try:
+            bio.seek(0)
+            text = bio.read().decode(enc)
+        except Exception:
+            continue
+        first = text.splitlines()[0] if text.strip() else ""
+        if ";" in first:
+            cand = _parse_semicolon_stage_csv_text(text)
+            if not cand.empty and cand.shape[1] >= 5:
+                df = cand
+                break
+        for sep in (",",):
             try:
                 bio.seek(0)
                 cand = pd.read_csv(bio, sep=sep, encoding=enc, dtype=str)

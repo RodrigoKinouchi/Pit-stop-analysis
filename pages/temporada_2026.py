@@ -597,9 +597,10 @@ with tabs[3]:
         st.info("Inclua pits de mais carros/corridas para comparar equipes (box plot precisa de volume).")
     else:
         st.caption(
-            "Para cada **corrida** (etapa + Sprint ou Principal), calcula-se o **melhor** tempo da corrida; "
-            "cada pit vira **delta = tempo − melhor** (s). O boxplot mostra a distribuição desses deltas por **equipe** — "
-            "assim dá para comparar performance entre pistas diferentes."
+            "Performance da **equipe**: em cada corrida (etapa + Sprint ou Principal), usa-se o "
+            "**tempo parado** (`tempo_troca_parado` no CSV). Calcula-se o **menor** parado da corrida e "
+            "**Δ = parado do carro − esse melhor**. O tempo total do pit lane inclui o piloto e "
+            "não entra aqui. O segundo gráfico mantém o mesmo critério para **troca de pneus**."
         )
         team_colors = (
             df_all.drop_duplicates(subset=["team_name"])
@@ -607,27 +608,30 @@ with tabs[3]:
             .to_dict()
         )
         _per_race = df_all.groupby(["stage_number", "race_type"], as_index=False).agg(
-            melhor_total=("TempoTotal_numeric", "min"),
+            melhor_parado=("TempoParado_numeric", "min"),
             melhor_pneu=("Tempopneu_numeric", "min"),
         )
         _deltas = df_all.merge(_per_race, on=["stage_number", "race_type"], how="left")
-        _deltas["delta_total_s"] = _deltas["TempoTotal_numeric"] - _deltas["melhor_total"]
+        _deltas["delta_parado_s"] = _deltas["TempoParado_numeric"] - _deltas["melhor_parado"]
         _deltas["delta_pneu_s"] = _deltas["Tempopneu_numeric"] - _deltas["melhor_pneu"]
 
-        df_delta_total = _deltas.dropna(subset=["delta_total_s"])
+        df_delta_parado = _deltas.dropna(subset=["delta_parado_s"])
         df_delta_pneu = _deltas.dropna(subset=["delta_pneu_s"])
 
-        if len(df_delta_total) < 2:
-            st.warning("Dados insuficientes para o boxplot de tempo total (delta).")
+        if len(df_delta_parado) < 2:
+            st.warning(
+                "Dados insuficientes para o boxplot de tempo parado. "
+                "Grave pits com `tempo_troca_parado` no CSV (importação etapa)."
+            )
         else:
             figb = px.box(
-                df_delta_total,
+                df_delta_parado,
                 x="team_name",
-                y="delta_total_s",
+                y="delta_parado_s",
                 color="team_name",
                 color_discrete_map=team_colors,
-                title="Delta do tempo total vs melhor pit da corrida — por equipe (2026)",
-                labels={"team_name": "Equipe", "delta_total_s": "Δ vs melhor (s)"},
+                title="Delta do tempo parado vs melhor da corrida — por equipe (2026)",
+                labels={"team_name": "Equipe", "delta_parado_s": "Δ vs melhor (s)"},
             )
             figb.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False

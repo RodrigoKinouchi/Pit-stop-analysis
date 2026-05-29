@@ -22,6 +22,7 @@ ou migrar para base de dados gerida (Supabase/Neon + URL nas secrets).
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -33,8 +34,10 @@ from utils.season_2026_data import (
     CALENDAR_2026,
     EQUIPES_COR_2026,
     EQUIPES_PILOTOS_2026,
+    GUEST_DRIVERS_2026,
     AMATTHEIS_EXTENDED_PIT_NUMBERS_2026,
     amattheis_viz_color_for,
+    apply_stage_team_overrides,
     parse_driver_label,
     team_chart_color,
 )
@@ -157,7 +160,7 @@ def seed_reference_data(
     wipe_all=True remove TODOS os eventos e referências e recria do zero (uso dev).
     """
     path = init_db(db_path)
-    team_names = sorted(set(EQUIPES_PILOTOS_2026.values()))
+    team_names = sorted(set(EQUIPES_PILOTOS_2026.values()) | set(GUEST_DRIVERS_2026.values()))
 
     with sqlite3.connect(path) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -194,7 +197,8 @@ def seed_reference_data(
                 (t, cname, chex),
             )
 
-        for label, team in sorted(EQUIPES_PILOTOS_2026.items(), key=lambda x: parse_driver_label(x[0])[0]):
+        grid = {**EQUIPES_PILOTOS_2026, **GUEST_DRIVERS_2026}
+        for label, team in sorted(grid.items(), key=lambda x: parse_driver_label(x[0])[0]):
             num, pname = parse_driver_label(label)
             acss, ahex = amattheis_viz_color_for(label, num)
             ext = 1 if num in AMATTHEIS_EXTENDED_PIT_NUMBERS_2026 else 0
@@ -299,6 +303,36 @@ def _normalize_sqlite_column_names(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns=rename) if rename else df
 
 
+_PARADO_NOTES_RE = re.compile(r"troca_parado\s*=\s*([\d,\.]+)", re.I)
+
+
+def _parado_sec_from_notes(notes: object) -> float:
+    if notes is None or (isinstance(notes, float) and pd.isna(notes)):
+        return float("nan")
+    m = _PARADO_NOTES_RE.search(str(notes))
+    if not m:
+        return float("nan")
+    return float(m.group(1).replace(",", "."))
+
+
+def _enrich_pit_df_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Colunas numéricas usadas nas páginas (inclui tempo parado vindo das notas do CSV)."""
+    df = _normalize_sqlite_column_names(df.copy())
+    df["Numeral"] = df["car_number"]
+    df["Piloto"] = df["pilot_name"]
+    df["POS"] = df["race_position"]
+    df["pitlap"] = df["pit_lap"]
+    df["Tempopneu_numeric"] = _ms_to_sec_optional(df["tempo_troca_pneus_ms"])
+    df["TempoTotal_numeric"] = df["tempo_total_ms"].astype(float) / 1000.0
+    df["TempoTotal"] = df["TempoTotal_numeric"]
+    df["Tempopneu"] = df["Tempopneu_numeric"]
+    if "notes" in df.columns:
+        df["TempoParado_numeric"] = df["notes"].map(_parado_sec_from_notes)
+    else:
+        df["TempoParado_numeric"] = float("nan")
+    return df
+
+
 def _ms_to_sec_optional(series: pd.Series) -> pd.Series:
     """Converte milissegundos em segundos (float); NULL vira NaN."""
 
@@ -310,6 +344,23 @@ def _ms_to_sec_optional(series: pd.Series) -> pd.Series:
         return float(v) / 1000.0
 
     return series.apply(one)
+
+
+def _apply_team_overrides_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Ajusta equipe/cor por regras pontuais (ex.: #54 na etapa 4 → Mercado Livre)."""
+    if df.empty or "team_name" not in df.columns:
+        return df
+    out = df.copy()
+    stg = out["stage_number"].astype(int)
+    car = out["car_number"].astype(int)
+    for i in out.index:
+        team = apply_stage_team_overrides(int(stg.at[i]), int(car.at[i]), str(out.at[i, "team_name"]))
+        if team != out.at[i, "team_name"]:
+            out.at[i, "team_name"] = team
+            if "team_color_hex" in out.columns:
+                _, chex = team_chart_color(team)
+                out.at[i, "team_color_hex"] = chex
+    return out
 
 
 def load_race_dataframe(
@@ -341,17 +392,9 @@ def load_race_dataframe(
         df = pd.read_sql_query(q, conn, params=[stage_number, race_type])
     if df.empty:
         return df
-    df = _normalize_sqlite_column_names(df.copy())
-    df["Numeral"] = df["car_number"]
-    df["Piloto"] = df["pilot_name"]
-    df["POS"] = df["race_position"]
-    df["pitlap"] = df["pit_lap"]
-    df["Tempopneu_numeric"] = _ms_to_sec_optional(df["tempo_troca_pneus_ms"])
-    df["TempoTotal_numeric"] = df["tempo_total_ms"].astype(float) / 1000.0
-    df["TempoTotal"] = df["TempoTotal_numeric"]
-    df["Tempopneu"] = df["Tempopneu_numeric"]
+    df = _enrich_pit_df_columns(df)
     df["corrida_label"] = f"Etapa {stage_number} — {race_type}"
-    return df
+    return _apply_team_overrides_df(df)
 
 
 def load_season_dataframe_2026(db_path: Optional[Path] = None) -> pd.DataFrame:
@@ -376,19 +419,11 @@ def load_season_dataframe_2026(db_path: Optional[Path] = None) -> pd.DataFrame:
         df = pd.read_sql_query(q, conn)
     if df.empty:
         return df
-    df = _normalize_sqlite_column_names(df.copy())
-    df["Numeral"] = df["car_number"]
-    df["Piloto"] = df["pilot_name"]
-    df["POS"] = df["race_position"]
-    df["pitlap"] = df["pit_lap"]
-    df["Tempopneu_numeric"] = _ms_to_sec_optional(df["tempo_troca_pneus_ms"])
-    df["TempoTotal_numeric"] = df["tempo_total_ms"].astype(float) / 1000.0
-    df["TempoTotal"] = df["TempoTotal_numeric"]
-    df["Tempopneu"] = df["Tempopneu_numeric"]
+    df = _enrich_pit_df_columns(df)
     df["corrida_label"] = (
         "E" + df["stage_number"].astype(str) + " " + df["race_type"].astype(str)
     )
-    return df
+    return _apply_team_overrides_df(df)
 
 
 def fetch_pit_events(

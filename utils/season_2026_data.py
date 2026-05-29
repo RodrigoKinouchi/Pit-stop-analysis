@@ -10,6 +10,16 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Dict, List, Optional, Tuple
 
+# Substituição pontual na etapa (não altera o grid da temporada inteira)
+STAGE_TEAM_OVERRIDE_2026: Dict[Tuple[int, int], str] = {
+    (4, 54): "MERCADO LIVRE RACING TEAM",  # #54 (Chaves) no lugar do #6 (Hélio) — etapa 4
+}
+
+# Pilotos fora do grid fixo que podem aparecer em uma etapa (cadastro SQLite / importação)
+GUEST_DRIVERS_2026: Dict[str, str] = {
+    "54 - Caio Chaves": "MERCADO LIVRE RACING TEAM",
+}
+
 # --- Calendário (12 etapas, 2026) ---
 @dataclass(frozen=True)
 class Stage2026:
@@ -184,6 +194,12 @@ def amattheis_viz_color_for(label: str, car_number: int) -> Tuple[Optional[str],
         if k.startswith(prefix):
             return v, css_name_to_hex(v)
     return None, NEUTRAL_AMATTHEIS_CHART_HEX
+
+
+def apply_stage_team_overrides(
+    stage_number: int, car_number: int, team_name: str
+) -> str:
+    return STAGE_TEAM_OVERRIDE_2026.get((int(stage_number), int(car_number)), team_name)
 
 
 def team_chart_color(team_name: str) -> Tuple[str, str]:
