@@ -174,8 +174,6 @@ def row_to_app_dict(row: pd.Series) -> dict:
     pos = str(row["race_position"]).strip()
     tt = _br_decimal_to_dot(row.get("tempo_total", ""))
     tp = _br_decimal_to_dot(row.get("tempo_troca_pneus", ""))
-    if not tp and tt:
-        tp = tt
     parado = _br_decimal_to_dot(row.get("tempo_troca_parado", ""))
     p1 = str(row.get("pneu1", "") or "").strip() or "Não registrado"
     p2 = str(row.get("pneu2", "") or "").strip() or ""
@@ -220,8 +218,6 @@ def validate_rows_for_sqlite(rows: List[dict], parse_ms) -> tuple[list[dict], li
                 errs.append(f"Linha {i}: tempo_total inválido ({r.get('tempo_total_dot')!r}).")
                 continue
             tp_ms = parse_ms(r.get("tempo_troca_pneus_dot") or "")
-            if tp_ms is None:
-                tp_ms = tt_ms
             ok.append({**r, "tempo_total_ms": tt_ms, "tempo_troca_pneus_ms": tp_ms})
         except Exception as ex:
             errs.append(f"Linha {i}: {ex}")

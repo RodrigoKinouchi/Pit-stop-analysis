@@ -612,7 +612,8 @@ with tabs[3]:
             "Performance da **equipe**: em cada corrida (etapa + Sprint ou Principal), usa-se o "
             "**tempo parado** (`tempo_troca_parado` no CSV). Calcula-se o **menor** parado da corrida e "
             "**Δ = parado do carro − esse melhor**. O tempo total do pit lane inclui o piloto e "
-            "não entra aqui. O segundo gráfico mantém o mesmo critério para **troca de pneus**."
+            "não entra aqui. O segundo gráfico mantém o mesmo critério para **troca de pneus** "
+            "(Pneu Rap; valores > 8 s ou cópia do tempo total são ignorados)."
         )
         team_colors = (
             df_all.drop_duplicates(subset=["team_name"])

@@ -38,6 +38,7 @@ from utils.season_2026_data import (
     AMATTHEIS_EXTENDED_PIT_NUMBERS_2026,
     amattheis_viz_color_for,
     apply_stage_team_overrides,
+    normalize_team_name,
     parse_driver_label,
     team_chart_color,
 )
@@ -240,6 +241,10 @@ def ensure_db_ready(db_path: Optional[Path] = None) -> Path:
     path = init_db(db_path)
     # Sempre ressincroniza com utils.season_2026_data (upsert; não apaga pit_stop_events_2026).
     seed_reference_data(path, wipe_all=False)
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        _sanitize_corrupted_tire_times(conn)
+        conn.commit()
     return path
 
 
@@ -304,6 +309,8 @@ def _normalize_sqlite_column_names(df: pd.DataFrame) -> pd.DataFrame:
 
 
 _PARADO_NOTES_RE = re.compile(r"troca_parado\s*=\s*([\d,\.]+)", re.I)
+# Pneu Rap típico Stock Car: ~1,5–4 s; acima disso costuma ser dado errado ou outra métrica.
+_MAX_TIRE_RAP_MS = 8000
 
 
 def _parado_sec_from_notes(notes: object) -> float:
@@ -315,6 +322,45 @@ def _parado_sec_from_notes(notes: object) -> float:
     return float(m.group(1).replace(",", "."))
 
 
+def _sanitize_tire_ms(pneu_ms: object, total_ms: object) -> Optional[int]:
+    """
+    Descarta troca de pneus inválida (ex.: cópia acidental do tempo total na importação).
+  """
+    if pneu_ms is None or (isinstance(pneu_ms, float) and pd.isna(pneu_ms)):
+        return None
+    if pd.isna(pneu_ms):
+        return None
+    p = int(pneu_ms)
+    if p <= 0 or p > _MAX_TIRE_RAP_MS:
+        return None
+    if total_ms is not None and not (isinstance(total_ms, float) and pd.isna(total_ms)) and not pd.isna(total_ms):
+        t = int(total_ms)
+        if t > 0 and (p >= t * 0.5 or abs(p - t) <= 50):
+            return None
+    return p
+
+
+def _sanitize_corrupted_tire_times(conn: sqlite3.Connection) -> int:
+    """Limpa no SQLite pneus que são cópia do tempo total (dados legados)."""
+    cur = conn.execute(
+        """
+        UPDATE pit_stop_events_2026
+        SET tempo_troca_pneus_ms = NULL
+        WHERE tempo_troca_pneus_ms IS NOT NULL
+          AND tempo_total_ms IS NOT NULL
+          AND (
+            tempo_troca_pneus_ms <= 0
+            OR tempo_troca_pneus_ms > ?
+            OR tempo_troca_pneus_ms >= tempo_total_ms * 0.5
+            OR ABS(tempo_troca_pneus_ms - tempo_total_ms) <= 50
+          )
+        """
+        ,
+        (_MAX_TIRE_RAP_MS,),
+    )
+    return cur.rowcount
+
+
 def _enrich_pit_df_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Colunas numéricas usadas nas páginas (inclui tempo parado vindo das notas do CSV)."""
     df = _normalize_sqlite_column_names(df.copy())
@@ -322,7 +368,11 @@ def _enrich_pit_df_columns(df: pd.DataFrame) -> pd.DataFrame:
     df["Piloto"] = df["pilot_name"]
     df["POS"] = df["race_position"]
     df["pitlap"] = df["pit_lap"]
-    df["Tempopneu_numeric"] = _ms_to_sec_optional(df["tempo_troca_pneus_ms"])
+    tire_ms = df.apply(
+        lambda r: _sanitize_tire_ms(r.get("tempo_troca_pneus_ms"), r.get("tempo_total_ms")),
+        axis=1,
+    )
+    df["Tempopneu_numeric"] = _ms_to_sec_optional(tire_ms)
     df["TempoTotal_numeric"] = df["tempo_total_ms"].astype(float) / 1000.0
     df["TempoTotal"] = df["TempoTotal_numeric"]
     df["Tempopneu"] = df["Tempopneu_numeric"]
@@ -355,7 +405,7 @@ def _apply_team_overrides_df(df: pd.DataFrame) -> pd.DataFrame:
     car = out["car_number"].astype(int)
     for i in out.index:
         team = apply_stage_team_overrides(int(stg.at[i]), int(car.at[i]), str(out.at[i, "team_name"]))
-        out.at[i, "team_name"] = team
+        out.at[i, "team_name"] = normalize_team_name(team)
         if "team_color_hex" in out.columns:
             _, chex = team_chart_color(team)
             out.at[i, "team_color_hex"] = chex

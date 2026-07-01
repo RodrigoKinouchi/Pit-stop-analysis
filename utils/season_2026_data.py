@@ -69,7 +69,7 @@ EQUIPES_PILOTOS_2026: Dict[str, str] = {
     "0 - Caca Bueno": "SCUDERIA CHIARELLI",
     "18 - Allam Khodair": "BLAU MOTORSPORT",
     "301 - Rafael Reis": "CAR RACING",
-    "51 - Atila Abreu": "SCUDERIA BANDEIRAS SPORT",
+    "51 - Atila Abreu": "SCUDERIA BANDEIRAS SPORTS",
     "80 - Alfredinho Ibiapina": "FULL TIME GAZOO RACING",
     "27 - Renan Guerra": "AMATTHEIS",
     "6 - Helio Castroneves": "MERCADO LIVRE RACING TEAM",
@@ -82,12 +82,18 @@ EQUIPES_PILOTOS_2026: Dict[str, str] = {
     "121 - Felipe Baptista": "STERLING RACING",
 }
 
+# Nomes alternativos no cadastro/relatórios → nome canónico no app
+TEAM_NAME_ALIASES_2026: Dict[str, str] = {
+    "SCUDERIA BANDEIRAS SPORT": "SCUDERIA BANDEIRAS SPORTS",
+    "MERCADO LIVRE RACING": "MERCADO LIVRE RACING TEAM",
+}
+
 # Cores por equipe (nome CSS); complemento para nomes que aparecem no grid mas não na lista original
 EQUIPES_COR_2026: Dict[str, str] = {
     "MERCADO LIVRE RACING TEAM": "yellow",
     "MERCADO LIVRE RACING": "yellow",
     "EUROFARMA RC": "greenyellow",
-    "VALDA-CAVALEIRO SPORTS": "darkgreen",
+    "VALDA-CAVALEIRO SPORTS": "limegreen",
     "FULL TIME GAZOO RACING": "crimson",
     "CAR RACING": "orange",
     "TEAM RC": "red",
@@ -97,11 +103,10 @@ EQUIPES_COR_2026: Dict[str, str] = {
     "SCUDERIA CHIARELLI": "seashell",
     "RTR SG28": "crimson",
     "BLAU MOTORSPORT": "blue",
-    "CROWN RACING": "teal",
+    "CROWN RACING": "cyan",
     "STERLING RACING": "white",
     "SCUDERIA BANDEIRAS SPORTS": "silver",
     "SCUDERIA BANDEIRAS": "lightblue",
-    "SCUDERIA BANDEIRAS SPORT": "silver",
     "AMATTHEIS": "navy",
 }
 
@@ -165,6 +170,8 @@ CSS_NAMED_COLOR_HEX: Dict[str, str] = {
     "dodgerblue": "#1E90FF",
     "purple": "#800080",
     "teal": "#008080",
+    "limegreen": "#32CD32",
+    "cyan": "#00FFFF",
 }
 
 NEUTRAL_AMATTHEIS_CHART_HEX = "#5A5A5A"
@@ -198,15 +205,23 @@ def amattheis_viz_color_for(label: str, car_number: int) -> Tuple[Optional[str],
     return None, NEUTRAL_AMATTHEIS_CHART_HEX
 
 
+def normalize_team_name(team_name: str) -> str:
+    """Unifica variantes (ex.: SCUDERIA BANDEIRAS SPORT → … SPORTS)."""
+    t = (team_name or "").strip()
+    return TEAM_NAME_ALIASES_2026.get(t, t)
+
+
 def apply_stage_team_overrides(
     stage_number: int, car_number: int, team_name: str
 ) -> str:
-    return STAGE_TEAM_OVERRIDE_2026.get((int(stage_number), int(car_number)), team_name)
+    team = STAGE_TEAM_OVERRIDE_2026.get((int(stage_number), int(car_number)), team_name)
+    return normalize_team_name(team)
 
 
 def team_chart_color(team_name: str) -> Tuple[str, str]:
     """(nome_css, hex) para a equipe; fallback cinza."""
-    css = EQUIPES_COR_2026.get(team_name)
+    canonical = normalize_team_name(team_name)
+    css = EQUIPES_COR_2026.get(canonical)
     if css is None:
         return "grey", "#808080"
     return css, css_name_to_hex(css)
