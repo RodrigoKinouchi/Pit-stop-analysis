@@ -18,6 +18,7 @@ STAGE_TEAM_OVERRIDE_2026: Dict[Tuple[int, int], str] = {
 # Pilotos fora do grid fixo que podem aparecer em uma etapa (cadastro SQLite / importação)
 GUEST_DRIVERS_2026: Dict[str, str] = {
     "54 - Caio Chaves": "MERCADO LIVRE RACING TEAM",
+    "72 - Antonella Bassani": "FULL TIME GAZOO RACING",
 }
 
 # --- Calendário (12 etapas, 2026) ---
@@ -96,7 +97,7 @@ EQUIPES_COR_2026: Dict[str, str] = {
     "SCUDERIA CHIARELLI": "seashell",
     "RTR SG28": "crimson",
     "BLAU MOTORSPORT": "blue",
-    "CROWN RACING": "black",
+    "CROWN RACING": "teal",
     "STERLING RACING": "white",
     "SCUDERIA BANDEIRAS SPORTS": "silver",
     "SCUDERIA BANDEIRAS": "lightblue",
@@ -163,6 +164,7 @@ CSS_NAMED_COLOR_HEX: Dict[str, str] = {
     "dimgray": "#696969",
     "dodgerblue": "#1E90FF",
     "purple": "#800080",
+    "teal": "#008080",
 }
 
 NEUTRAL_AMATTHEIS_CHART_HEX = "#5A5A5A"
