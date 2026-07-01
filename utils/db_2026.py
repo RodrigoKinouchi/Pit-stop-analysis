@@ -347,7 +347,7 @@ def _ms_to_sec_optional(series: pd.Series) -> pd.Series:
 
 
 def _apply_team_overrides_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Ajusta equipe/cor por regras pontuais (ex.: #54 na etapa 4 → Mercado Livre)."""
+    """Ajusta equipe/cor por regras pontuais e sincroniza hex com season_2026_data."""
     if df.empty or "team_name" not in df.columns:
         return df
     out = df.copy()
@@ -355,11 +355,10 @@ def _apply_team_overrides_df(df: pd.DataFrame) -> pd.DataFrame:
     car = out["car_number"].astype(int)
     for i in out.index:
         team = apply_stage_team_overrides(int(stg.at[i]), int(car.at[i]), str(out.at[i, "team_name"]))
-        if team != out.at[i, "team_name"]:
-            out.at[i, "team_name"] = team
-            if "team_color_hex" in out.columns:
-                _, chex = team_chart_color(team)
-                out.at[i, "team_color_hex"] = chex
+        out.at[i, "team_name"] = team
+        if "team_color_hex" in out.columns:
+            _, chex = team_chart_color(team)
+            out.at[i, "team_color_hex"] = chex
     return out
 
 
