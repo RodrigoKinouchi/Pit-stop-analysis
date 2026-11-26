@@ -671,8 +671,10 @@ with tabs[3]:
             "O segundo gráfico (secundário) usa **troca de pneus comparável**: "
             "com 4 pneus, soma só os **2 mais rápidos** (evita comparação injusta vs 2 pneus)."
         )
+        _excluir_equipes = {"RTR SG28 TEAM"}
+        _eq = df_all[~df_all["team_name"].isin(_excluir_equipes)].copy()
         team_colors = (
-            df_all.drop_duplicates(subset=["team_name"])
+            _eq.drop_duplicates(subset=["team_name"])
             .set_index("team_name")["team_color_hex"]
             .to_dict()
         )
@@ -681,11 +683,12 @@ with tabs[3]:
             if "TempopneuCmp_numeric" in df_all.columns
             else "Tempopneu_numeric"
         )
+        # Melhor da corrida considera o grid inteiro; só a exibição omite equipes excluídas.
         _per_race = df_all.groupby(["stage_number", "race_type"], as_index=False).agg(
             melhor_parado=("TempoParado_numeric", "min"),
             melhor_pneu=(_pneu_col, "min"),
         )
-        _deltas = df_all.merge(_per_race, on=["stage_number", "race_type"], how="left")
+        _deltas = _eq.merge(_per_race, on=["stage_number", "race_type"], how="left")
         _deltas["delta_parado_s"] = _deltas["TempoParado_numeric"] - _deltas["melhor_parado"]
         _deltas["delta_pneu_s"] = _deltas[_pneu_col] - _deltas["melhor_pneu"]
 
