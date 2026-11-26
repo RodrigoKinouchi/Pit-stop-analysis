@@ -309,8 +309,9 @@ def _normalize_sqlite_column_names(df: pd.DataFrame) -> pd.DataFrame:
 
 
 _PARADO_NOTES_RE = re.compile(r"troca_parado\s*=\s*([\d,\.]+)", re.I)
-# Pneu Rap típico Stock Car: ~1,5–4 s; acima disso costuma ser dado errado ou outra métrica.
-_MAX_TIRE_RAP_MS = 8000
+# Sprint: Pneu Rap (~1,5–4 s). Principal: soma dos dois pneus (~5–12 s).
+# Acima disso costuma ser cópia do pit lane ou outra métrica.
+_MAX_TIRE_RAP_MS = 16000
 
 
 def _parado_sec_from_notes(notes: object) -> float:

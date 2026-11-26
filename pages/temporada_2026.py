@@ -84,8 +84,8 @@ def _track_image_for_circuit(circuit_name: str) -> str:
         tid = 11
     elif "goiânia" in n or "goiania" in n or "ayrton senna" in n:
         tid = 1
-    elif "chapecó" in n or "chapeco" in n:
-        tid = 4
+    elif "santa cruz" in n:
+        tid = 4  # fallback visual próximo (sem asset dedicado)
     elif "brasília" in n or "brasilia" in n or "nelson piquet" in n:
         tid = 12
     if tid is not None and tid in track_images:

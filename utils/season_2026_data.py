@@ -37,11 +37,11 @@ CALENDAR_2026: Tuple[Stage2026, ...] = (
     Stage2026(4, "Goiânia/GO", "Autódromo Internacional Ayrton Senna", date(2026, 5, 17)),
     Stage2026(5, "Cuiabá/MT", "Autódromo Internacional de Mato Grosso", date(2026, 6, 13)),
     Stage2026(6, "Mogi Guaçu/SP", "Autódromo Velocitta", date(2026, 7, 26)),
-    Stage2026(7, "Cascavel/PR", "Autódromo Zilmar Beux", date(2026, 8, 9)),
-    Stage2026(8, "Chapecó/SC", "Autódromo Internacional de Chapecó", date(2026, 9, 6)),
+    Stage2026(7, "Santa Cruz do Sul/RS", "Autódromo Internacional de Santa Cruz do Sul", date(2026, 8, 9)),
+    Stage2026(8, "Curvelo/MG", "Circuito dos Cristais", date(2026, 9, 6)),
     Stage2026(9, "Brasília/DF", "Autódromo Internacional Nelson Piquet", date(2026, 9, 27)),
-    Stage2026(10, "Goiânia/GO", "Autódromo Internacional Ayrton Senna", date(2026, 10, 18)),
-    Stage2026(11, "Nova Santa Rita/SP", "Velopark", date(2026, 11, 15)),
+    Stage2026(10, "Cascavel/PR", "Autódromo Zilmar Beux", date(2026, 10, 18)),
+    Stage2026(11, "Nova Santa Rita/RS", "Velopark", date(2026, 11, 15)),
     Stage2026(12, "São Paulo/SP", "Autódromo de Interlagos", date(2026, 12, 13)),
 )
 
