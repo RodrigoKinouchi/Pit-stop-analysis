@@ -695,6 +695,83 @@ with tabs[3]:
         df_delta_parado = _deltas.dropna(subset=["delta_parado_s"])
         df_delta_pneu = _deltas.dropna(subset=["delta_pneu_s"])
 
+        def _ranking_equipes(df_src: pd.DataFrame, col: str) -> pd.DataFrame:
+            """Ranking por mediana do Δ (robusto a outlier); média e N como apoio."""
+            g = (
+                df_src.groupby("team_name", as_index=False)
+                .agg(
+                    mediana=(col, "median"),
+                    media=(col, "mean"),
+                    n=(col, "count"),
+                )
+                .sort_values(["mediana", "media", "n"], ascending=[True, True, False])
+                .reset_index(drop=True)
+            )
+            g.insert(0, "Pos", range(1, len(g) + 1))
+            g["mediana"] = g["mediana"].round(3)
+            g["media"] = g["media"].round(3)
+            g["n"] = g["n"].astype(int)
+            return g.rename(
+                columns={
+                    "team_name": "Equipe",
+                    "mediana": "Mediana Δ (s)",
+                    "media": "Média Δ (s)",
+                    "n": "N pits",
+                }
+            )
+
+        st.subheader("Ranking — tempo carro parado")
+        st.caption(
+            "Ordenado pela **mediana** do Δ vs melhor da corrida (quanto menor, melhor). "
+            "A mediana é preferível à média: um pit ruim demais não derruba a equipe sozinho."
+        )
+        if df_delta_parado.empty:
+            st.warning("Sem dados de tempo carro parado para o ranking.")
+        else:
+            _rk_par = _ranking_equipes(df_delta_parado, "delta_parado_s")
+            st.dataframe(
+                _rk_par,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Pos": st.column_config.NumberColumn("Pos", format="%d", alignment="center"),
+                    "Equipe": st.column_config.TextColumn("Equipe"),
+                    "Mediana Δ (s)": st.column_config.NumberColumn(
+                        "Mediana Δ (s)", format="%.3f", alignment="center"
+                    ),
+                    "Média Δ (s)": st.column_config.NumberColumn(
+                        "Média Δ (s)", format="%.3f", alignment="center"
+                    ),
+                    "N pits": st.column_config.NumberColumn("N pits", format="%d", alignment="center"),
+                },
+            )
+
+        st.subheader("Ranking — troca de pneus (secundário)")
+        st.caption(
+            "Mesma lógica (mediana do Δ). Com 4 pneus, entra a soma dos 2 mais rápidos."
+        )
+        if df_delta_pneu.empty:
+            st.warning("Sem dados de troca de pneus para o ranking.")
+        else:
+            _rk_pneu = _ranking_equipes(df_delta_pneu, "delta_pneu_s")
+            st.dataframe(
+                _rk_pneu,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Pos": st.column_config.NumberColumn("Pos", format="%d", alignment="center"),
+                    "Equipe": st.column_config.TextColumn("Equipe"),
+                    "Mediana Δ (s)": st.column_config.NumberColumn(
+                        "Mediana Δ (s)", format="%.3f", alignment="center"
+                    ),
+                    "Média Δ (s)": st.column_config.NumberColumn(
+                        "Média Δ (s)", format="%.3f", alignment="center"
+                    ),
+                    "N pits": st.column_config.NumberColumn("N pits", format="%d", alignment="center"),
+                },
+            )
+
+        st.subheader("Distribuição (box plot)")
         if len(df_delta_parado) < 2:
             st.warning(
                 "Dados insuficientes para o boxplot de tempo carro parado. "
