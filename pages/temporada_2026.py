@@ -668,20 +668,26 @@ with tabs[3]:
             "Performance da **equipe** (métrica principal): em cada corrida usa-se o "
             "**tempo carro parado**. Δ = parado do carro − melhor parado da corrida. "
             "O tempo total (PIT IN→OUT) inclui o piloto e não entra aqui. "
-            "O segundo gráfico (secundário) aplica o mesmo critério à **troca de pneus**."
+            "O segundo gráfico (secundário) usa **troca de pneus comparável**: "
+            "com 4 pneus, soma só os **2 mais rápidos** (evita comparação injusta vs 2 pneus)."
         )
         team_colors = (
             df_all.drop_duplicates(subset=["team_name"])
             .set_index("team_name")["team_color_hex"]
             .to_dict()
         )
+        _pneu_col = (
+            "TempopneuCmp_numeric"
+            if "TempopneuCmp_numeric" in df_all.columns
+            else "Tempopneu_numeric"
+        )
         _per_race = df_all.groupby(["stage_number", "race_type"], as_index=False).agg(
             melhor_parado=("TempoParado_numeric", "min"),
-            melhor_pneu=("Tempopneu_numeric", "min"),
+            melhor_pneu=(_pneu_col, "min"),
         )
         _deltas = df_all.merge(_per_race, on=["stage_number", "race_type"], how="left")
         _deltas["delta_parado_s"] = _deltas["TempoParado_numeric"] - _deltas["melhor_parado"]
-        _deltas["delta_pneu_s"] = _deltas["Tempopneu_numeric"] - _deltas["melhor_pneu"]
+        _deltas["delta_pneu_s"] = _deltas[_pneu_col] - _deltas["melhor_pneu"]
 
         df_delta_parado = _deltas.dropna(subset=["delta_parado_s"])
         df_delta_pneu = _deltas.dropna(subset=["delta_pneu_s"])
@@ -718,7 +724,7 @@ with tabs[3]:
                 y="delta_pneu_s",
                 color="team_name",
                 color_discrete_map=team_colors,
-                title="Δ troca de pneus vs melhor da corrida — por equipe (secundário)",
+                title="Δ troca de pneus (2 mais rápidos se 4P) — por equipe (secundário)",
                 labels={"team_name": "Equipe", "delta_pneu_s": "Δ vs melhor (s)"},
             )
             figbp.update_layout(

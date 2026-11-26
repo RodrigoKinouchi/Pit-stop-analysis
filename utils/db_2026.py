@@ -358,9 +358,11 @@ _PARADO_NOTES_RE = re.compile(
     r"(?:tempo_)?(?:carro_)?parado\s*=\s*([\d,\.]+)|troca_parado\s*=\s*([\d,\.]+)",
     re.I,
 )
-# Sprint: Pneu Rap (~1,5–4 s). Principal: soma dos dois pneus (~5–12 s).
-# Acima disso costuma ser cópia do pit lane ou outra métrica.
-_MAX_TIRE_RAP_MS = 16000
+# Limite alto: Principal com 4 pneus pode passar de 15–20 s; outliers de pit
+# desastroso (ex.: 60 s numa roda) entram na soma da corrida, mas o ranking
+# anual usa só os 2 mais rápidos (TempopneuCmp).
+_MAX_TIRE_SUM_MS = 120000
+_PNEU_DETALHE_RE = re.compile(r"pneus_detalhe=([^\s;]+)", re.I)
 
 
 def _parado_sec_from_notes(notes: object) -> float:
@@ -376,13 +378,13 @@ def _parado_sec_from_notes(notes: object) -> float:
 def _sanitize_tire_ms(pneu_ms: object, total_ms: object) -> Optional[int]:
     """
     Descarta troca de pneus inválida (ex.: cópia acidental do tempo total na importação).
-  """
+    """
     if pneu_ms is None or (isinstance(pneu_ms, float) and pd.isna(pneu_ms)):
         return None
     if pd.isna(pneu_ms):
         return None
     p = int(pneu_ms)
-    if p <= 0 or p > _MAX_TIRE_RAP_MS:
+    if p <= 0 or p > _MAX_TIRE_SUM_MS:
         return None
     if total_ms is not None and not (isinstance(total_ms, float) and pd.isna(total_ms)) and not pd.isna(total_ms):
         t = int(total_ms)
@@ -407,9 +409,51 @@ def _sanitize_corrupted_tire_times(conn: sqlite3.Connection) -> int:
           )
         """
         ,
-        (_MAX_TIRE_RAP_MS,),
+        (_MAX_TIRE_SUM_MS,),
     )
     return cur.rowcount
+
+
+def _pneu_times_from_notes(notes: object) -> list[float]:
+    """Extrai tempos de `pneus_detalhe=DE:1.83|DD:3.13|...` (também aceita vírgula)."""
+    if notes is None or (isinstance(notes, float) and pd.isna(notes)):
+        return []
+    m = _PNEU_DETALHE_RE.search(str(notes))
+    if not m:
+        return []
+    raw = m.group(1)
+    # Preferir | ; se legado com vírgula e labels, partir por rótulo.
+    if "|" in raw:
+        parts = raw.split("|")
+    elif re.search(r"(DE|DD|TD|TE):", raw, re.I):
+        parts = re.split(r"(?=(?:DE|DD|TD|TE):)", raw, flags=re.I)
+    else:
+        parts = raw.split(",")
+    out: list[float] = []
+    for part in parts:
+        part = part.strip().strip(",")
+        if not part:
+            continue
+        if ":" in part:
+            part = part.split(":", 1)[1]
+        try:
+            out.append(float(part.replace(",", ".")))
+        except ValueError:
+            continue
+    return out
+
+
+def _pneu_cmp_seconds(times: list[float], full_sum_sec: float) -> float:
+    """
+    Métrica comparável no ranking anual:
+    - 4+ trocas → soma dos 2 mais rápidos
+    - 1–3 trocas → soma de todos (já é o total da operação)
+    """
+    if len(times) >= 4:
+        return float(sum(sorted(times)[:2]))
+    if times:
+        return float(sum(times))
+    return float(full_sum_sec) if full_sum_sec == full_sum_sec else float("nan")
 
 
 def _enrich_pit_df_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -443,6 +487,15 @@ def _enrich_pit_df_columns(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["TempoParado_numeric"] = parado_col
     df["TempoParado"] = df["TempoParado_numeric"]
+
+    # Ranking anual justo: 4 pneus → 2 mais rápidos (detalhe nas notes).
+    cmp_vals: list[float] = []
+    for _, row in df.iterrows():
+        full = row.get("Tempopneu_numeric")
+        full_f = float(full) if full == full and full is not None else float("nan")
+        times = _pneu_times_from_notes(row.get("notes")) if "notes" in df.columns else []
+        cmp_vals.append(_pneu_cmp_seconds(times, full_f))
+    df["TempopneuCmp_numeric"] = cmp_vals
     return df
 
 
