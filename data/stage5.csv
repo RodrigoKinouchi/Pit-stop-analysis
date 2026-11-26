@@ -1,4 +1,4 @@
-stage_number;race_type;car_number;pit_lap;race_position;tempo_total;tempo_troca_parado;tempo_troca_pneus;pneu1;pneu2;video_link
+﻿stage_number;race_type;car_number;pit_lap;race_position;tempo_total;tempo_carro_parado;tempo_troca_pneus;pneu1;pneu2;video_link
 5;PRINCIPAL;33;9;1;70,372;8,310;2,19;DD;TD;
 5;PRINCIPAL;1;8;2;71,034;8,810;3,03;DD;TD;
 5;PRINCIPAL;29;9;3;71,906;8,900;2,50;DD;TD;

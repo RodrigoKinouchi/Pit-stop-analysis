@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS pit_stop_events_2026 (
     race_position TEXT NOT NULL,
     pneu1 TEXT,
     pneu2 TEXT,
+    tempo_carro_parado_ms INTEGER,
     tempo_troca_pneus_ms INTEGER,
     tempo_total_ms INTEGER NOT NULL,
     tempo_reacao_air_jack_ms INTEGER,
@@ -143,10 +144,48 @@ def init_db(db_path: Optional[Path] = None) -> Path:
         conn.executescript(SCHEMA_SQL)
         conn.execute(
             "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
-            ("schema_version", "1"),
+            ("schema_version", "2"),
         )
         conn.commit()
     return path
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _ensure_pit_event_columns(conn: sqlite3.Connection) -> None:
+    """Migra DBs antigos: coluna oficial tempo_carro_parado_ms."""
+    cols = _table_columns(conn, "pit_stop_events_2026")
+    if "tempo_carro_parado_ms" not in cols:
+        conn.execute(
+            "ALTER TABLE pit_stop_events_2026 ADD COLUMN tempo_carro_parado_ms INTEGER"
+        )
+
+
+def _migrate_parado_from_notes(conn: sqlite3.Connection) -> int:
+    """
+    Copia `troca_parado=` / `carro_parado=` das notes para tempo_carro_parado_ms
+    quando a coluna ainda está NULL.
+    """
+    rows = conn.execute(
+        "SELECT id, notes FROM pit_stop_events_2026 "
+        "WHERE tempo_carro_parado_ms IS NULL AND notes IS NOT NULL AND notes != ''"
+    ).fetchall()
+    updated = 0
+    for eid, notes in rows:
+        sec = _parado_sec_from_notes(notes)
+        if pd.isna(sec):
+            continue
+        ms = int(round(float(sec) * 1000))
+        if ms <= 0:
+            continue
+        conn.execute(
+            "UPDATE pit_stop_events_2026 SET tempo_carro_parado_ms = ? WHERE id = ?",
+            (ms, eid),
+        )
+        updated += 1
+    return updated
 
 
 def seed_reference_data(
@@ -243,7 +282,13 @@ def ensure_db_ready(db_path: Optional[Path] = None) -> Path:
     seed_reference_data(path, wipe_all=False)
     with sqlite3.connect(path) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
+        _ensure_pit_event_columns(conn)
+        _migrate_parado_from_notes(conn)
         _sanitize_corrupted_tire_times(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+            ("schema_version", "2"),
+        )
         conn.commit()
     return path
 
@@ -308,7 +353,11 @@ def _normalize_sqlite_column_names(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns=rename) if rename else df
 
 
-_PARADO_NOTES_RE = re.compile(r"troca_parado\s*=\s*([\d,\.]+)", re.I)
+# Legado CSV: troca_parado= ; novo: carro_parado=
+_PARADO_NOTES_RE = re.compile(
+    r"(?:tempo_)?(?:carro_)?parado\s*=\s*([\d,\.]+)|troca_parado\s*=\s*([\d,\.]+)",
+    re.I,
+)
 # Sprint: Pneu Rap (~1,5–4 s). Principal: soma dos dois pneus (~5–12 s).
 # Acima disso costuma ser cópia do pit lane ou outra métrica.
 _MAX_TIRE_RAP_MS = 16000
@@ -320,7 +369,8 @@ def _parado_sec_from_notes(notes: object) -> float:
     m = _PARADO_NOTES_RE.search(str(notes))
     if not m:
         return float("nan")
-    return float(m.group(1).replace(",", "."))
+    raw = m.group(1) or m.group(2)
+    return float(raw.replace(",", "."))
 
 
 def _sanitize_tire_ms(pneu_ms: object, total_ms: object) -> Optional[int]:
@@ -363,7 +413,12 @@ def _sanitize_corrupted_tire_times(conn: sqlite3.Connection) -> int:
 
 
 def _enrich_pit_df_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Colunas numéricas usadas nas páginas (inclui tempo parado vindo das notas do CSV)."""
+    """
+    Colunas numéricas das 3 métricas Amattheis:
+    - TempoTotal_numeric: PIT IN → PIT OUT
+    - TempoParado_numeric: carro parado (prioridade de análise)
+    - Tempopneu_numeric: troca de pneus (secundária)
+    """
     df = _normalize_sqlite_column_names(df.copy())
     df["Numeral"] = df["car_number"]
     df["Piloto"] = df["pilot_name"]
@@ -377,10 +432,17 @@ def _enrich_pit_df_columns(df: pd.DataFrame) -> pd.DataFrame:
     df["TempoTotal_numeric"] = df["tempo_total_ms"].astype(float) / 1000.0
     df["TempoTotal"] = df["TempoTotal_numeric"]
     df["Tempopneu"] = df["Tempopneu_numeric"]
-    if "notes" in df.columns:
-        df["TempoParado_numeric"] = df["notes"].map(_parado_sec_from_notes)
+
+    if "tempo_carro_parado_ms" in df.columns:
+        parado_col = _ms_to_sec_optional(df["tempo_carro_parado_ms"])
     else:
-        df["TempoParado_numeric"] = float("nan")
+        parado_col = pd.Series([float("nan")] * len(df), index=df.index)
+    if "notes" in df.columns:
+        from_notes = df["notes"].map(_parado_sec_from_notes)
+        df["TempoParado_numeric"] = parado_col.where(parado_col.notna(), from_notes)
+    else:
+        df["TempoParado_numeric"] = parado_col
+    df["TempoParado"] = df["TempoParado_numeric"]
     return df
 
 
@@ -425,7 +487,7 @@ def load_race_dataframe(
     q = """
         SELECT p.id, p.stage_number, p.race_type, p.car_number, p.pit_lap, p.race_position,
                p.pneu1, p.pneu2,
-               p.tempo_troca_pneus_ms, p.tempo_total_ms,
+               p.tempo_carro_parado_ms, p.tempo_troca_pneus_ms, p.tempo_total_ms,
                p.tempo_reacao_air_jack_ms, p.tempo_primeira_conexao_ms,
                p.tempo_troca1_ms, p.tempo_troca2_ms,
                p.video_link, p.notes, p.detail_level,
@@ -453,7 +515,7 @@ def load_season_dataframe_2026(db_path: Optional[Path] = None) -> pd.DataFrame:
     q = """
         SELECT p.id, p.stage_number, p.race_type, p.car_number, p.pit_lap, p.race_position,
                p.pneu1, p.pneu2,
-               p.tempo_troca_pneus_ms, p.tempo_total_ms,
+               p.tempo_carro_parado_ms, p.tempo_troca_pneus_ms, p.tempo_total_ms,
                p.tempo_reacao_air_jack_ms, p.tempo_primeira_conexao_ms,
                p.tempo_troca1_ms, p.tempo_troca2_ms,
                p.video_link, p.notes, p.detail_level,
@@ -517,6 +579,7 @@ def upsert_pit_stop_event(
     race_position: str,
     pneu1: Optional[str],
     pneu2: Optional[str],
+    tempo_carro_parado_ms: Optional[int],
     tempo_troca_pneus_ms: Optional[int],
     tempo_total_ms: int,
     tempo_reacao_air_jack_ms: Optional[int],
@@ -531,6 +594,9 @@ def upsert_pit_stop_event(
     """
     Insere ou atualiza pelo índice único (etapa, tipo de corrida, carro, volta do pit).
     Retorna (id, 'inserted'|'updated').
+
+    Métricas: tempo_total_ms (PIT IN→OUT), tempo_carro_parado_ms (prioritário),
+    tempo_troca_pneus_ms (secundário).
     """
     ensure_db_ready(db_path)
     cols = (
@@ -541,6 +607,7 @@ def upsert_pit_stop_event(
         race_position,
         pneu1,
         pneu2,
+        tempo_carro_parado_ms,
         tempo_troca_pneus_ms,
         tempo_total_ms,
         tempo_reacao_air_jack_ms,
@@ -554,14 +621,15 @@ def upsert_pit_stop_event(
     sql_insert = """
         INSERT INTO pit_stop_events_2026 (
             stage_number, race_type, car_number, pit_lap, race_position,
-            pneu1, pneu2, tempo_troca_pneus_ms, tempo_total_ms,
+            pneu1, pneu2, tempo_carro_parado_ms, tempo_troca_pneus_ms, tempo_total_ms,
             tempo_reacao_air_jack_ms, tempo_primeira_conexao_ms, tempo_troca1_ms, tempo_troca2_ms,
             video_link, notes, detail_level
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(stage_number, race_type, car_number, pit_lap) DO UPDATE SET
             race_position = excluded.race_position,
             pneu1 = excluded.pneu1,
             pneu2 = excluded.pneu2,
+            tempo_carro_parado_ms = excluded.tempo_carro_parado_ms,
             tempo_troca_pneus_ms = excluded.tempo_troca_pneus_ms,
             tempo_total_ms = excluded.tempo_total_ms,
             tempo_reacao_air_jack_ms = excluded.tempo_reacao_air_jack_ms,

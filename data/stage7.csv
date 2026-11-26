@@ -1,4 +1,4 @@
-stage_number;race_type;car_number;pit_lap;race_position;tempo_total;tempo_troca_parado;tempo_troca_pneus;pneu1;pneu2;video_link
+﻿stage_number;race_type;car_number;pit_lap;race_position;tempo_total;tempo_carro_parado;tempo_troca_pneus;pneu1;pneu2;video_link
 7;SPRINT;38;21;8;32,029;3,570;2,94;TE;;
 7;SPRINT;29;15;12;32,253;3,570;2,65;TE;;
 7;SPRINT;11;13;26;31,869;3,750;3,06;DE;;

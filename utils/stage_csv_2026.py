@@ -3,7 +3,14 @@ CSV padrão por etapa: stage{N}.csv
 
 Formato esperado (separador `;`, decimais com vírgula):
   stage_number;race_type;car_number;pit_lap;race_position;tempo_total;
-  tempo_troca_parado;tempo_troca_pneus;pneu1;pneu2;video_link
+  tempo_carro_parado;tempo_troca_pneus;pneu1;pneu2;video_link
+
+Métricas Amattheis:
+  - tempo_total: PIT IN → PIT OUT (~40–70 s, varia por autódromo)
+  - tempo_carro_parado: rodas param → tracionam (~4 s Sprint / ~9 s Principal) — análise principal
+  - tempo_troca_pneus: pistola na roda → pneu preso (~3 s/pneu) — secundário
+
+Alias legado: tempo_troca_parado → tempo_carro_parado
 
 race_type: SPRINT | PRINCIPAL (case-insensitive)
 
@@ -145,6 +152,10 @@ def _normalize_stage_df(df: pd.DataFrame) -> pd.DataFrame:
         "posicao": "race_position",
         "pos": "race_position",
         "link": "video_link",
+        # Legado / sinónimos do tempo carro parado
+        "tempo_troca_parado": "tempo_carro_parado",
+        "tempo_parado": "tempo_carro_parado",
+        "carro_parado": "tempo_carro_parado",
     }
     out = df.copy()
     out = out.rename(columns={k: v for k, v in alias.items() if k in out.columns})
@@ -165,6 +176,15 @@ def race_type_to_app(value: object) -> str:
     raise ValueError(f"race_type inválido: {value!r} (use SPRINT ou PRINCIPAL)")
 
 
+def _parado_from_row(row: pd.Series) -> str:
+    for key in ("tempo_carro_parado", "tempo_troca_parado", "tempo_parado"):
+        if key in row.index:
+            v = _br_decimal_to_dot(row.get(key, ""))
+            if v:
+                return v
+    return ""
+
+
 def row_to_app_dict(row: pd.Series) -> dict:
     """Uma linha já normalizada -> dict para upsert / formulário."""
     stg = int(float(str(row["stage_number"]).replace(",", ".")))
@@ -174,14 +194,11 @@ def row_to_app_dict(row: pd.Series) -> dict:
     pos = str(row["race_position"]).strip()
     tt = _br_decimal_to_dot(row.get("tempo_total", ""))
     tp = _br_decimal_to_dot(row.get("tempo_troca_pneus", ""))
-    parado = _br_decimal_to_dot(row.get("tempo_troca_parado", ""))
+    parado = _parado_from_row(row)
     p1 = str(row.get("pneu1", "") or "").strip() or "Não registrado"
     p2 = str(row.get("pneu2", "") or "").strip() or ""
     vid = str(row.get("video_link", "") or "").strip() or ""
-    notes_parts = ["stage CSV"]
-    if parado:
-        notes_parts.append(f"troca_parado={parado}")
-    notes = "; ".join(notes_parts)
+    notes = "stage CSV"
     return {
         "stage_number": stg,
         "race_type": rt,
@@ -189,6 +206,7 @@ def row_to_app_dict(row: pd.Series) -> dict:
         "pit_lap": lap,
         "race_position": pos,
         "tempo_total_dot": tt,
+        "tempo_carro_parado_dot": parado,
         "tempo_troca_pneus_dot": tp,
         "pneu1": p1,
         "pneu2": p2 if p2 else None,
@@ -217,8 +235,17 @@ def validate_rows_for_sqlite(rows: List[dict], parse_ms) -> tuple[list[dict], li
             if tt_ms is None:
                 errs.append(f"Linha {i}: tempo_total inválido ({r.get('tempo_total_dot')!r}).")
                 continue
+            parado_raw = r.get("tempo_carro_parado_dot") or ""
+            parado_ms = parse_ms(parado_raw) if parado_raw else None
             tp_ms = parse_ms(r.get("tempo_troca_pneus_dot") or "")
-            ok.append({**r, "tempo_total_ms": tt_ms, "tempo_troca_pneus_ms": tp_ms})
+            ok.append(
+                {
+                    **r,
+                    "tempo_total_ms": tt_ms,
+                    "tempo_carro_parado_ms": parado_ms,
+                    "tempo_troca_pneus_ms": tp_ms,
+                }
+            )
         except Exception as ex:
             errs.append(f"Linha {i}: {ex}")
     return ok, errs

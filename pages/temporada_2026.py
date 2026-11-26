@@ -5,7 +5,6 @@ Temporada 2026 — visualização a partir do SQLite (pit_stop_2026.db).
 from __future__ import annotations
 
 import os
-import re
 import sqlite3
 from datetime import datetime
 
@@ -32,26 +31,13 @@ from utils.db_2026 import (
 )
 
 
-_PARADO_NOTES_RE = re.compile(r"troca_parado\s*=\s*([\d,\.]+)", re.I)
-
-
-def _parado_sec_from_notes(notes: object) -> float:
-    """Extrai segundos de `troca_parado=` nas notas (import CSV etapa)."""
-    if notes is None or (isinstance(notes, float) and pd.isna(notes)):
-        return float("nan")
-    m = _PARADO_NOTES_RE.search(str(notes))
-    if not m:
-        return float("nan")
-    return float(m.group(1).replace(",", "."))
-
-
 def _ensure_tempo_parado_column(df: pd.DataFrame) -> pd.DataFrame:
-    """Garante TempoParado_numeric (fallback se load_season não enriqueceu)."""
+    """Garante TempoParado_numeric (coluna oficial; notes só como legado)."""
     if df.empty or "TempoParado_numeric" in df.columns:
         return df
     out = df.copy()
-    if "notes" in out.columns:
-        out["TempoParado_numeric"] = out["notes"].map(_parado_sec_from_notes)
+    if "tempo_carro_parado_ms" in out.columns:
+        out["TempoParado_numeric"] = _ms_to_sec_optional(out["tempo_carro_parado_ms"])
     else:
         out["TempoParado_numeric"] = float("nan")
     return out
@@ -199,27 +185,34 @@ st.subheader(f"Dados: Etapa {stage_number} — {race_type} — {circuit_name}")
 tabs = st.tabs(["Overview", "Amattheis", "Análise pilotos (ano)", "Análise equipes (ano)"])
 
 with tabs[0]:
-    min_p = df_plot["Tempopneu_numeric"].min()
-    max_p = df_plot["Tempopneu_numeric"].max()
-    y0, y1 = (None, None)
-    if pd.notna(min_p) and pd.notna(max_p):
-        y0, y1 = max(0, min_p - 0.5), max_p + 0.5
+    st.caption(
+        "Métrica principal: **tempo carro parado**. "
+        "Tempo total = PIT IN→OUT · Troca de pneus = pistola (secundário)."
+    )
 
-    fig1 = px.bar(
+    # 1) Tempo carro parado (prioritário)
+    min_par = df_plot["TempoParado_numeric"].min()
+    max_par = df_plot["TempoParado_numeric"].max()
+    y0p, y1p = (None, None)
+    if pd.notna(min_par) and pd.notna(max_par):
+        y0p, y1p = max(0, min_par - 0.5), max_par + 0.5
+
+    fig_par = px.bar(
         df_plot,
         x="Piloto",
-        y="Tempopneu_numeric",
-        title="Tempo de troca de pneus (s)",
-        labels={"Tempopneu_numeric": "Segundos", "Piloto": "Piloto"},
+        y="TempoParado_numeric",
+        title="Tempo carro parado (s)",
+        labels={"TempoParado_numeric": "Segundos", "Piloto": "Piloto"},
         color="Piloto",
         color_discrete_map=pilot_color_map,
         text="Pneu_Trocado",
     )
-    fig1.update_layout(title_x=0.4, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-    if y0 is not None:
-        fig1.update_yaxes(range=[y0, y1])
-    st.plotly_chart(fig1, use_container_width=True)
+    fig_par.update_layout(title_x=0.4, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    if y0p is not None:
+        fig_par.update_yaxes(range=[y0p, y1p])
+    st.plotly_chart(fig_par, use_container_width=True)
 
+    # 2) Tempo total
     min_t = df_plot["TempoTotal_numeric"].min()
     max_t = df_plot["TempoTotal_numeric"].max()
     y0t, y1t = (None, None)
@@ -230,7 +223,7 @@ with tabs[0]:
         df_plot,
         x="Piloto",
         y="TempoTotal_numeric",
-        title="Tempo total de pit (s)",
+        title="Tempo total (PIT IN → PIT OUT) (s)",
         labels={"TempoTotal_numeric": "Segundos", "Piloto": "Piloto"},
         color="Piloto",
         color_discrete_map=pilot_color_map,
@@ -240,6 +233,28 @@ with tabs[0]:
     if y0t is not None:
         fig2.update_yaxes(range=[y0t, y1t])
     st.plotly_chart(fig2, use_container_width=True)
+
+    # 3) Troca de pneus (secundário)
+    min_p = df_plot["Tempopneu_numeric"].min()
+    max_p = df_plot["Tempopneu_numeric"].max()
+    y0, y1 = (None, None)
+    if pd.notna(min_p) and pd.notna(max_p):
+        y0, y1 = max(0, min_p - 0.5), max_p + 0.5
+
+    fig1 = px.bar(
+        df_plot,
+        x="Piloto",
+        y="Tempopneu_numeric",
+        title="Tempo troca de pneus (s) — secundário",
+        labels={"Tempopneu_numeric": "Segundos", "Piloto": "Piloto"},
+        color="Piloto",
+        color_discrete_map=pilot_color_map,
+        text="Pneu_Trocado",
+    )
+    fig1.update_layout(title_x=0.4, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    if y0 is not None:
+        fig1.update_yaxes(range=[y0, y1])
+    st.plotly_chart(fig1, use_container_width=True)
 
     if race_type == "Sprint":
         pneu_counts = df["Pneu1"].value_counts()
@@ -283,9 +298,9 @@ with tabs[0]:
     sc = px.scatter(
         df.assign(POS_num=pos_num),
         x="POS_num",
-        y="TempoTotal_numeric",
-        title="Posição na corrida × tempo total (s)",
-        labels={"POS_num": "Posição", "TempoTotal_numeric": "Tempo total (s)"},
+        y="TempoParado_numeric",
+        title="Posição na corrida × tempo carro parado (s)",
+        labels={"POS_num": "Posição", "TempoParado_numeric": "Tempo carro parado (s)"},
         color="Piloto",
         color_discrete_map=pilot_color_map,
     )
@@ -331,8 +346,20 @@ with tabs[1]:
                 px.bar(
                     df_m,
                     x="Piloto",
+                    y="TempoParado_numeric",
+                    title="Tempo carro parado",
+                    labels={"TempoParado_numeric": "s"},
+                    color="Piloto",
+                    color_discrete_map=cor_m,
+                ),
+                "par",
+            ),
+            (
+                px.bar(
+                    df_m,
+                    x="Piloto",
                     y="TempoTotal_numeric",
-                    title="Tempo total",
+                    title="Tempo total (PIT IN→OUT)",
                     labels={"TempoTotal_numeric": "s"},
                     color="Piloto",
                     color_discrete_map=cor_m,
@@ -344,7 +371,7 @@ with tabs[1]:
                     df_m,
                     x="Piloto",
                     y="Tempopneu_numeric",
-                    title="Troca de pneus",
+                    title="Troca de pneus (secundário)",
                     labels={"Tempopneu_numeric": "s"},
                     color="Piloto",
                     color_discrete_map=cor_m,
@@ -415,16 +442,13 @@ with tabs[2]:
         st.warning("Sem dados no SQLite para 2026.")
     else:
         st.caption(
-            "**Tempo do piloto** = tempo total − **tempo parado** (`troca_parado=` nas notas, quando existir). "
-            "Se não houver parado registrado, usa-se **total − troca de pneus** (mesma ideia da temporada 2024). "
+            "Análise prioriza **tempo carro parado**. "
+            "**Tempo do piloto** = tempo total − tempo carro parado (só quando o parado existe; "
+            "não se usa mais troca de pneus como substituto). "
             "Com mais de um pit na mesma corrida, usa-se o de **menor tempo total**."
         )
         w = df_all.copy()
-        w["troca_parado_s"] = w["notes"].map(_parado_sec_from_notes)
-        parado_ok = w["troca_parado_s"].notna()
-        w["Tempo_Driver_numeric"] = w["TempoTotal_numeric"] - w["troca_parado_s"].where(
-            parado_ok, w["Tempopneu_numeric"]
-        )
+        w["Tempo_Driver_numeric"] = w["TempoTotal_numeric"] - w["TempoParado_numeric"]
 
         pilotos_selecionados = st.multiselect(
             "Selecione os pilotos:",
@@ -440,10 +464,14 @@ with tabs[2]:
                 best_idx = dfr.groupby("pilot_name")["TempoTotal_numeric"].idxmin()
                 d1 = dfr.loc[best_idx].copy()
 
+                d1["Ranking_TempoParado"] = d1["TempoParado_numeric"].rank(
+                    method="min", ascending=True
+                )
                 d1["Ranking_TempoTotal"] = d1["TempoTotal_numeric"].rank(method="min", ascending=True)
                 d1["Ranking_Tempopneu"] = d1["Tempopneu_numeric"].rank(method="min", ascending=True)
                 d1["Ranking_TempoDriver"] = d1["Tempo_Driver_numeric"].rank(method="min", ascending=True)
 
+                min_parado = d1["TempoParado_numeric"].min()
                 min_total = d1["TempoTotal_numeric"].min()
                 min_pneu = d1["Tempopneu_numeric"].min()
                 min_driver = d1["Tempo_Driver_numeric"].min()
@@ -454,24 +482,36 @@ with tabs[2]:
                 df_sel = d1[d1["pilot_name"].isin(pilotos_selecionados)]
                 for _, row in df_sel.iterrows():
                     piloto = row["pilot_name"]
+                    par_val = row["TempoParado_numeric"]
+                    delt_par = float("nan")
+                    if pd.notna(par_val) and pd.notna(min_parado):
+                        delt_par = float(par_val - min_parado)
                     pneu_val = row["Tempopneu_numeric"]
                     delt_pneu = float("nan")
                     if pd.notna(pneu_val) and pd.notna(min_pneu):
                         delt_pneu = float(pneu_val - min_pneu)
+                    drv_val = row["Tempo_Driver_numeric"]
+                    delt_drv = float("nan")
+                    if pd.notna(drv_val) and pd.notna(min_driver):
+                        delt_drv = float(drv_val - min_driver)
 
                     dados_pilotos.append(
                         {
                             "Corrida": nome_corrida,
                             "sort_key": sort_key,
                             "Piloto": piloto,
+                            "deltatempoparado": delt_par,
+                            "Ranking_TempoParado": float(row["Ranking_TempoParado"])
+                            if pd.notna(row["Ranking_TempoParado"])
+                            else float("nan"),
                             "deltatempototal": float(row["TempoTotal_numeric"] - min_total),
                             "Ranking_TempoTotal": float(row["Ranking_TempoTotal"]),
                             "deltatempopneu": delt_pneu,
                             "Ranking_Tempopneu": float(row["Ranking_Tempopneu"])
                             if pd.notna(row["Ranking_Tempopneu"])
                             else float("nan"),
-                            "deltatempodriver": float(row["Tempo_Driver_numeric"] - min_driver),
-                            "Tempo_Driver": float(row["Tempo_Driver_numeric"]),
+                            "deltatempodriver": delt_drv,
+                            "Tempo_Driver": float(drv_val) if pd.notna(drv_val) else float("nan"),
                             "Ranking_TempoDriver": float(row["Ranking_TempoDriver"])
                             if pd.notna(row["Ranking_TempoDriver"])
                             else float("nan"),
@@ -487,12 +527,31 @@ with tabs[2]:
                     df_pt[["sort_key", "Corrida"]].drop_duplicates().sort_values("sort_key")["Corrida"].tolist()
                 )
 
+                df_par_plot = df_pt.dropna(subset=["deltatempoparado"])
+                if not df_par_plot.empty:
+                    fig_par = px.line(
+                        df_par_plot,
+                        x="Corrida",
+                        y="deltatempoparado",
+                        color="Piloto",
+                        title="Δ tempo carro parado vs mais rápido (métrica principal)",
+                        labels={"Corrida": "Corrida", "deltatempoparado": "Diferença (s)"},
+                        markers=True,
+                        category_orders={"Corrida": ordem_corrida},
+                    )
+                    fig_par.update_layout(
+                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", title_x=0.5
+                    )
+                    st.plotly_chart(fig_par, use_container_width=True)
+                else:
+                    st.warning("Sem tempos de carro parado válidos para o gráfico principal.")
+
                 fig_total = px.line(
                     df_pt,
                     x="Corrida",
                     y="deltatempototal",
                     color="Piloto",
-                    title="Diferença do tempo total em relação ao mais rápido",
+                    title="Δ tempo total (PIT IN→OUT) vs mais rápido",
                     labels={"Corrida": "Corrida", "deltatempototal": "Diferença (s)"},
                     markers=True,
                     category_orders={"Corrida": ordem_corrida},
@@ -509,7 +568,7 @@ with tabs[2]:
                         x="Corrida",
                         y="deltatempopneu",
                         color="Piloto",
-                        title="Diferença do tempo de troca de pneus em relação ao mais rápido",
+                        title="Δ tempo troca de pneus vs mais rápido (secundário)",
                         labels={"Corrida": "Corrida", "deltatempopneu": "Diferença (s)"},
                         markers=True,
                         category_orders={"Corrida": ordem_corrida},
@@ -518,28 +577,29 @@ with tabs[2]:
                         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", title_x=0.5
                     )
                     st.plotly_chart(fig_pneu, use_container_width=True)
-                else:
-                    st.warning("Sem tempos de troca de pneus válidos para o gráfico de pneus (NR em todas as corridas?).")
 
-                fig_driver = px.line(
-                    df_pt,
-                    x="Corrida",
-                    y="deltatempodriver",
-                    color="Piloto",
-                    title="Diferença do tempo do piloto em relação ao mais rápido",
-                    labels={"Corrida": "Corrida", "deltatempodriver": "Diferença (s)"},
-                    markers=True,
-                    category_orders={"Corrida": ordem_corrida},
-                )
-                fig_driver.update_layout(
-                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", title_x=0.5
-                )
-                st.plotly_chart(fig_driver, use_container_width=True)
+                df_drv_plot = df_pt.dropna(subset=["deltatempodriver"])
+                if not df_drv_plot.empty:
+                    fig_driver = px.line(
+                        df_drv_plot,
+                        x="Corrida",
+                        y="deltatempodriver",
+                        color="Piloto",
+                        title="Δ tempo do piloto (total − parado) vs mais rápido",
+                        labels={"Corrida": "Corrida", "deltatempodriver": "Diferença (s)"},
+                        markers=True,
+                        category_orders={"Corrida": ordem_corrida},
+                    )
+                    fig_driver.update_layout(
+                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", title_x=0.5
+                    )
+                    st.plotly_chart(fig_driver, use_container_width=True)
 
                 df_pilotos_display = df_pt[
                     [
                         "Corrida",
                         "Piloto",
+                        "Ranking_TempoParado",
                         "Ranking_TempoTotal",
                         "Ranking_Tempopneu",
                         "Ranking_TempoDriver",
@@ -558,15 +618,21 @@ with tabs[2]:
 
                 media_rankings = (
                     df_pt.groupby("Piloto")[
-                        ["Ranking_TempoTotal", "Ranking_Tempopneu", "Ranking_TempoDriver"]
+                        [
+                            "Ranking_TempoParado",
+                            "Ranking_TempoTotal",
+                            "Ranking_Tempopneu",
+                            "Ranking_TempoDriver",
+                        ]
                     ]
                     .mean(numeric_only=True)
                     .reset_index()
                 )
                 media_rankings.rename(
                     columns={
+                        "Ranking_TempoParado": "Média ranking carro parado",
                         "Ranking_TempoTotal": "Média ranking tempo total",
-                        "Ranking_Tempopneu": "Média ranking tempo pneus",
+                        "Ranking_Tempopneu": "Média ranking troca pneus",
                         "Ranking_TempoDriver": "Média ranking tempo piloto",
                     },
                     inplace=True,
@@ -574,8 +640,9 @@ with tabs[2]:
                 st.subheader("Média dos rankings dos pilotos selecionados")
                 _mr = media_rankings.copy()
                 _cols_med = (
+                    "Média ranking carro parado",
                     "Média ranking tempo total",
-                    "Média ranking tempo pneus",
+                    "Média ranking troca pneus",
                     "Média ranking tempo piloto",
                 )
                 for _c in _cols_med:
@@ -586,21 +653,10 @@ with tabs[2]:
                     hide_index=True,
                     column_config={
                         "Piloto": st.column_config.TextColumn("Piloto", alignment="center"),
-                        "Média ranking tempo total": st.column_config.NumberColumn(
-                            "Média ranking tempo total",
-                            format="%.1f",
-                            alignment="center",
-                        ),
-                        "Média ranking tempo pneus": st.column_config.NumberColumn(
-                            "Média ranking tempo pneus",
-                            format="%.1f",
-                            alignment="center",
-                        ),
-                        "Média ranking tempo piloto": st.column_config.NumberColumn(
-                            "Média ranking tempo piloto",
-                            format="%.1f",
-                            alignment="center",
-                        ),
+                        **{
+                            c: st.column_config.NumberColumn(c, format="%.1f", alignment="center")
+                            for c in _cols_med
+                        },
                     },
                 )
 
@@ -609,11 +665,10 @@ with tabs[3]:
         st.info("Inclua pits de mais carros/corridas para comparar equipes (box plot precisa de volume).")
     else:
         st.caption(
-            "Performance da **equipe**: em cada corrida (etapa + Sprint ou Principal), usa-se o "
-            "**tempo parado** (`tempo_troca_parado` no CSV). Calcula-se o **menor** parado da corrida e "
-            "**Δ = parado do carro − esse melhor**. O tempo total do pit lane inclui o piloto e "
-            "não entra aqui. O segundo gráfico mantém o mesmo critério para **troca de pneus** "
-            "(Pneu Rap; valores > 8 s ou cópia do tempo total são ignorados)."
+            "Performance da **equipe** (métrica principal): em cada corrida usa-se o "
+            "**tempo carro parado**. Δ = parado do carro − melhor parado da corrida. "
+            "O tempo total (PIT IN→OUT) inclui o piloto e não entra aqui. "
+            "O segundo gráfico (secundário) aplica o mesmo critério à **troca de pneus**."
         )
         team_colors = (
             df_all.drop_duplicates(subset=["team_name"])
@@ -633,8 +688,8 @@ with tabs[3]:
 
         if len(df_delta_parado) < 2:
             st.warning(
-                "Dados insuficientes para o boxplot de tempo parado. "
-                "Grave pits com `tempo_troca_parado` no CSV (importação etapa)."
+                "Dados insuficientes para o boxplot de tempo carro parado. "
+                "Grave pits com `tempo_carro_parado` no CSV (importação etapa)."
             )
         else:
             figb = px.box(
@@ -643,7 +698,7 @@ with tabs[3]:
                 y="delta_parado_s",
                 color="team_name",
                 color_discrete_map=team_colors,
-                title="Delta do tempo parado vs melhor da corrida — por equipe (2026)",
+                title="Δ tempo carro parado vs melhor da corrida — por equipe (2026)",
                 labels={"team_name": "Equipe", "delta_parado_s": "Δ vs melhor (s)"},
             )
             figb.update_layout(
@@ -663,7 +718,7 @@ with tabs[3]:
                 y="delta_pneu_s",
                 color="team_name",
                 color_discrete_map=team_colors,
-                title="Delta da troca de pneus vs melhor da corrida — por equipe (2026)",
+                title="Δ troca de pneus vs melhor da corrida — por equipe (secundário)",
                 labels={"team_name": "Equipe", "delta_pneu_s": "Δ vs melhor (s)"},
             )
             figbp.update_layout(

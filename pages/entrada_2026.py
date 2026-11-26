@@ -3,6 +3,11 @@ Entrada de pit stops — temporada 2026 (SQLite).
 
 Tempos no formato ss.mmm (ex.: 12.852). Mesma etapa + tipo de corrida + carro + volta do pit
 substitui o registro anterior.
+
+Métricas Amattheis:
+  - Tempo total (PIT IN → PIT OUT)
+  - Tempo carro parado (prioritário na análise)
+  - Tempo troca de pneus (secundário)
 """
 
 from __future__ import annotations
@@ -120,9 +125,15 @@ if mode == MODE_OPTS[1]:
 
             def _row_preview(i: int) -> str:
                 r = sub.loc[ix_list[i]]
+                parado = ""
+                for k in ("tempo_carro_parado", "tempo_troca_parado"):
+                    if k in r.index and str(r.get(k) or "").strip():
+                        parado = str(r[k]).strip()
+                        break
                 return (
                     f"#{r['car_number']} | pit volta {r['pit_lap']} | pos {r['race_position']} "
                     f"| total {r['tempo_total']}"
+                    + (f" | parado {parado}" if parado else "")
                 )
 
             sel_i = st.selectbox(
@@ -157,6 +168,7 @@ if mode == MODE_OPTS[1]:
                                 race_position=r["race_position"],
                                 pneu1=r["pneu1"],
                                 pneu2=p2,
+                                tempo_carro_parado_ms=r.get("tempo_carro_parado_ms"),
                                 tempo_troca_pneus_ms=r["tempo_troca_pneus_ms"],
                                 tempo_total_ms=r["tempo_total_ms"],
                                 tempo_reacao_air_jack_ms=None,
@@ -237,18 +249,37 @@ else:
     pneu2 = None
 
 st.subheader("Tempos (ss.mmm ou NR)")
+st.caption(
+    "**Tempo total** = PIT IN → PIT OUT · "
+    "**Carro parado** = rodas param → tracionam (métrica principal) · "
+    "**Troca de pneus** = pistola (secundário)"
+)
 
 _tt_p_def = ""
+_tt_par_def = ""
 _tt_tot_def = ""
 if _prefill:
     _tt_p_def = str(_prefill.get("tempo_troca_pneus_dot") or "")
+    _tt_par_def = str(_prefill.get("tempo_carro_parado_dot") or "")
     _tt_tot_def = str(_prefill.get("tempo_total_dot") or "")
 
-c1, c2 = st.columns(2)
+c1, c2, c3 = st.columns(3)
 with c1:
-    tt_pneu_raw = st.text_input("Troca de pneus (tempo)", value=_tt_p_def, placeholder="12.852 ou NR")
-with c2:
     tt_total_raw = st.text_input("Tempo total *", value=_tt_tot_def, placeholder="obrigatório")
+with c2:
+    tt_parado_raw = st.text_input(
+        "Tempo carro parado",
+        value=_tt_par_def,
+        placeholder="ex.: 4.120",
+        help="Métrica principal de análise da equipe.",
+    )
+with c3:
+    tt_pneu_raw = st.text_input(
+        "Tempo troca de pneus",
+        value=_tt_p_def,
+        placeholder="NR / opcional",
+        help="Secundário — ~3 s por pneu.",
+    )
 
 tempo_reacao_raw = ""
 tempo_1c_raw = ""
@@ -278,15 +309,19 @@ detail_level = "amattheis_extended" if is_ext else "standard"
 if mode == MODE_OPTS[0]:
     if st.button("Gravar pit stop", type="primary"):
         err: List[str] = []
-        ok_t, msg, tempo_troca_pneus_ms_v = _parse_time_field(tt_pneu_raw, "Troca de pneus")
-        if not ok_t:
-            err.append(msg or "")
-
         ok_t, msg, tempo_total_ms_v = _parse_time_field(tt_total_raw, "Tempo total")
         if not ok_t:
             err.append(msg or "")
         elif tempo_total_ms_v is None:
             err.append("Tempo total é obrigatório (ss.mmm).")
+
+        ok_t, msg, tempo_carro_parado_ms_v = _parse_time_field(tt_parado_raw, "Tempo carro parado")
+        if not ok_t:
+            err.append(msg or "")
+
+        ok_t, msg, tempo_troca_pneus_ms_v = _parse_time_field(tt_pneu_raw, "Tempo troca de pneus")
+        if not ok_t:
+            err.append(msg or "")
 
         tr_aj = t_1c = t_t1 = t_t2 = None
         if is_ext:
@@ -326,6 +361,7 @@ if mode == MODE_OPTS[0]:
                     race_position=race_position.strip(),
                     pneu1=pneu1,
                     pneu2=pneu2,
+                    tempo_carro_parado_ms=tempo_carro_parado_ms_v,
                     tempo_troca_pneus_ms=tempo_troca_pneus_ms_v,
                     tempo_total_ms=tempo_total_ms_v,
                     tempo_reacao_air_jack_ms=tr_aj,
