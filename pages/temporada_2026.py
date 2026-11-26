@@ -696,27 +696,24 @@ with tabs[3]:
         df_delta_pneu = _deltas.dropna(subset=["delta_pneu_s"])
 
         def _ranking_equipes(df_src: pd.DataFrame, col: str) -> pd.DataFrame:
-            """Ranking por mediana do Δ (robusto a outlier); média e N como apoio."""
+            """Ranking por mediana do Δ (robusto a outlier); média como apoio."""
             g = (
                 df_src.groupby("team_name", as_index=False)
                 .agg(
                     mediana=(col, "median"),
                     media=(col, "mean"),
-                    n=(col, "count"),
                 )
-                .sort_values(["mediana", "media", "n"], ascending=[True, True, False])
+                .sort_values(["mediana", "media"], ascending=[True, True])
                 .reset_index(drop=True)
             )
             g.insert(0, "Pos", range(1, len(g) + 1))
             g["mediana"] = g["mediana"].round(3)
             g["media"] = g["media"].round(3)
-            g["n"] = g["n"].astype(int)
             return g.rename(
                 columns={
                     "team_name": "Equipe",
                     "mediana": "Mediana Δ (s)",
                     "media": "Média Δ (s)",
-                    "n": "N pits",
                 }
             )
 
@@ -742,7 +739,6 @@ with tabs[3]:
                     "Média Δ (s)": st.column_config.NumberColumn(
                         "Média Δ (s)", format="%.3f", alignment="center"
                     ),
-                    "N pits": st.column_config.NumberColumn("N pits", format="%d", alignment="center"),
                 },
             )
 
@@ -767,7 +763,6 @@ with tabs[3]:
                     "Média Δ (s)": st.column_config.NumberColumn(
                         "Média Δ (s)", format="%.3f", alignment="center"
                     ),
-                    "N pits": st.column_config.NumberColumn("N pits", format="%d", alignment="center"),
                 },
             )
 
